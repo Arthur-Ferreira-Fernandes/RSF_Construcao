@@ -1,0 +1,73 @@
+/* =========================================
+   ESTILOS GLOBAIS DA NAVBAR (header.php)
+========================================= */
+.topbar { 
+    background-color: var(--darker-bg); /* Ele vai usar a variável do CSS da página atual */
+    padding: 15px 30px; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    border-bottom: 2px solid var(--primary-yellow); 
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.topbar-logo a {
+    text-decoration: none;
+    color: inherit;
+}
+
+.topbar-logo h2 { 
+    margin: 0; 
+    font-size: 1.5rem; 
+}
+
+.topbar-logo span { 
+    color: var(--primary-yellow); 
+}
+
+.topbar-nav {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+    flex-wrap: wrap;
+}
+
+.topbar-nav a { 
+    color: #ccc; 
+    text-decoration: none; 
+    font-weight: 700; 
+    font-size: 0.9rem; 
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s; 
+}
+
+.topbar-nav a:hover { 
+    color: var(--primary-yellow); 
+}
+
+.topbar-nav .btn-sair {
+    color: #e74c3c;
+    border: 1px solid #e74c3c;
+    padding: 6px 12px;
+    border-radius: 4px;
+}
+
+.topbar-nav .btn-sair:hover {
+    background-color: #e74c3c;
+    color: #fff;
+}
+
+@media (max-width: 768px) {
+    .topbar {
+        flex-direction: column;
+        padding: 15px;
+    }
+    .topbar-nav {
+        gap: 15px;
+        justify-content: center;
+        width: 100%;
+    }
+}

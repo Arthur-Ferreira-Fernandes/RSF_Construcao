@@ -1,0 +1,198 @@
+/* =========================================
+   LISTA DE PROJETOS (VISÃO GERAL)
+========================================= */
+:root {
+    --primary-yellow: #FFCC00;
+    --dark-bg: #1A1A1A;
+    --darker-bg: #111111;
+}
+
+body { margin: 0; font-family: 'Montserrat', sans-serif; background-color: var(--dark-bg); color: #fff; }
+
+
+.container { padding: 40px 30px; max-width: 1200px; margin: 0 auto; }
+
+.header-acoes {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.header-acoes h2 { margin: 0; display: flex; align-items: center; gap: 10px; }
+
+.btn-novo {
+    background-color: var(--primary-yellow);
+    color: #111;
+    text-decoration: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-weight: 700;
+    transition: 0.3s;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+}
+.btn-novo:hover { background-color: #e6b800; }
+
+/* Estilos da Tabela ERP */
+.table-wrapper {
+    background-color: var(--darker-bg);
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+th, td {
+    padding: 18px 20px;
+    border-bottom: 1px solid #333;
+}
+
+th {
+    background-color: #222;
+    color: var(--primary-yellow);
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+}
+
+/* Transformando a linha inteira em um link clicável */
+tr.linha-clicavel {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+tr.linha-clicavel:hover {
+    background-color: #2a2a2a;
+}
+
+/* Formatação Visual de Dados */
+.id-projeto { color: #888; font-weight: 900; font-size: 0.9rem; }
+.nome-projeto { font-weight: 700; font-size: 1.05rem; color: #fff; }
+.valor-obra { font-family: monospace; font-size: 1.1rem; color: #2ecc71; font-weight: bold; }
+
+/* Badges de Status */
+.badge-status {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-orcamento { background-color: rgba(52, 152, 219, 0.2); color: #3498db; border: 1px solid #3498db; }
+.status-andamento { background-color: rgba(255, 204, 0, 0.2); color: var(--primary-yellow); border: 1px solid var(--primary-yellow); }
+.status-pausado { background-color: rgba(231, 76, 60, 0.2); color: #e74c3c; border: 1px solid #e74c3c; }
+.status-concluido { background-color: rgba(46, 204, 113, 0.2); color: #2ecc71; border: 1px solid #2ecc71; }
+
+.btn-detalhes {
+    color: #fff;
+    background-color: #333;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    text-decoration: none;
+    transition: 0.3s;
+}
+tr.linha-clicavel:hover .btn-detalhes { background-color: var(--primary-yellow); color: #111; }
+
+/* =========================================
+   SISTEMA DE FILTROS (BUSCA AVANÇADA)
+========================================= */
+.filtros-card {
+    background-color: var(--darker-bg);
+    padding: 20px 25px;
+    border-radius: 8px;
+    margin-bottom: 25px;
+    border-left: 4px solid #3498db;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+
+.filtros-card h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #ccc;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.filtros-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    align-items: end;
+}
+
+.filtro-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.filtro-group label {
+    font-size: 0.8rem;
+    color: #888;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.filtro-group input, 
+.filtro-group select {
+    padding: 10px;
+    background-color: #222;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #fff;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 0.9rem;
+}
+
+.filtro-group input:focus, 
+.filtro-group select:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+.filtros-acoes {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-filtrar {
+    background-color: #3498db;
+    color: #fff;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+    flex-grow: 1;
+}
+
+.btn-filtrar:hover { background-color: #2980b9; }
+
+.btn-limpar {
+    background-color: transparent;
+    color: #aaa;
+    border: 1px solid #555;
+    padding: 10px 15px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: bold;
+    text-align: center;
+    transition: 0.3s;
+}
+
+.btn-limpar:hover {
+    background-color: #333;
+    color: #fff;
+}
