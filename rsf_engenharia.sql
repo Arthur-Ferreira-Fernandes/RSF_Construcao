@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Tempo de geração: 01/04/2026 às 23:07
+-- Tempo de geração: 03/04/2026 às 14:56
 -- Versão do servidor: 10.4.28-MariaDB
 -- Versão do PHP: 8.0.28
 
@@ -42,6 +42,29 @@ CREATE TABLE `arquivos` (
 -- --------------------------------------------------------
 
 --
+-- Estrutura para tabela `clientes`
+--
+
+CREATE TABLE `clientes` (
+  `id` int(11) NOT NULL,
+  `nome` varchar(255) NOT NULL,
+  `documento` varchar(20) DEFAULT NULL,
+  `telefone` varchar(20) DEFAULT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `status` enum('Ativo','Arquivado') DEFAULT 'Ativo',
+  `criado_em` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Despejando dados para a tabela `clientes`
+--
+
+INSERT INTO `clientes` (`id`, `nome`, `documento`, `telefone`, `email`, `status`, `criado_em`) VALUES
+(1, 'Arthur Cliente', '425.260.468-07', '(11) 98659-9562', 'arthurfernandesferreira@hotmail.com', 'Ativo', '2026-04-02 20:22:53');
+
+-- --------------------------------------------------------
+
+--
 -- Estrutura para tabela `despesas`
 --
 
@@ -62,7 +85,8 @@ CREATE TABLE `despesas` (
 
 INSERT INTO `despesas` (`id`, `projeto_id`, `descricao`, `valor`, `data_despesa`, `usuario_id`, `status`, `criado_em`) VALUES
 (1, 1, 'Compra de Cimento', 100.00, '2026-04-01', 1, 'Arquivado', '2026-04-01 20:21:08'),
-(2, 1, 'Teste', 100.00, '2026-04-01', 1, 'Arquivado', '2026-04-01 20:21:18');
+(2, 1, 'Teste', 100.00, '2026-04-01', 1, 'Arquivado', '2026-04-01 20:21:18'),
+(3, 1, 'Teste', 4000.00, '2026-04-02', 1, 'Ativo', '2026-04-02 20:41:14');
 
 -- --------------------------------------------------------
 
@@ -96,6 +120,7 @@ CREATE TABLE `projetos` (
   `id` int(11) NOT NULL,
   `nome` varchar(150) NOT NULL,
   `engenheiro_responsavel` varchar(100) NOT NULL,
+  `cliente_id` int(11) DEFAULT NULL,
   `valor` decimal(15,2) NOT NULL,
   `descricao` text DEFAULT NULL,
   `endereco` varchar(255) NOT NULL,
@@ -108,8 +133,8 @@ CREATE TABLE `projetos` (
 -- Despejando dados para a tabela `projetos`
 --
 
-INSERT INTO `projetos` (`id`, `nome`, `engenheiro_responsavel`, `valor`, `descricao`, `endereco`, `data_inicio`, `status`, `criado_em`) VALUES
-(1, 'Teste Edição', '1', 10000.00, 'Teste de edição de obra', 'Rua tie 136', '2026-03-31', 'Em Andamento', '2026-03-31 13:35:31');
+INSERT INTO `projetos` (`id`, `nome`, `engenheiro_responsavel`, `cliente_id`, `valor`, `descricao`, `endereco`, `data_inicio`, `status`, `criado_em`) VALUES
+(1, 'Teste Edição', '1', 1, 10000.00, 'Teste de edição de obra', 'Rua tie 136', '2026-03-31', 'Em Andamento', '2026-03-31 13:35:31');
 
 -- --------------------------------------------------------
 
@@ -134,7 +159,8 @@ CREATE TABLE `recebimentos` (
 
 INSERT INTO `recebimentos` (`id`, `projeto_id`, `descricao`, `valor`, `data_pagamento`, `usuario_id`, `status`, `criado_em`) VALUES
 (1, 1, 'Medição 1', 100000.00, '2026-04-01', 1, 'Arquivado', '2026-04-01 20:44:28'),
-(2, 1, 'Medição 1', 1000.00, '2026-04-01', 1, 'Arquivado', '2026-04-01 20:54:42');
+(2, 1, 'Medição 1', 1000.00, '2026-04-01', 1, 'Arquivado', '2026-04-01 20:54:42'),
+(3, 1, 'Teste', 5000.00, '2026-04-02', 1, 'Ativo', '2026-04-02 20:40:52');
 
 -- --------------------------------------------------------
 
@@ -173,6 +199,12 @@ ALTER TABLE `arquivos`
   ADD KEY `usuario_id` (`usuario_id`);
 
 --
+-- Índices de tabela `clientes`
+--
+ALTER TABLE `clientes`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Índices de tabela `despesas`
 --
 ALTER TABLE `despesas`
@@ -190,7 +222,8 @@ ALTER TABLE `engenheiros`
 -- Índices de tabela `projetos`
 --
 ALTER TABLE `projetos`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `cliente_id` (`cliente_id`);
 
 --
 -- Índices de tabela `recebimentos`
@@ -217,10 +250,16 @@ ALTER TABLE `arquivos`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
+-- AUTO_INCREMENT de tabela `clientes`
+--
+ALTER TABLE `clientes`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
 -- AUTO_INCREMENT de tabela `despesas`
 --
 ALTER TABLE `despesas`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT de tabela `engenheiros`
@@ -238,7 +277,7 @@ ALTER TABLE `projetos`
 -- AUTO_INCREMENT de tabela `recebimentos`
 --
 ALTER TABLE `recebimentos`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT de tabela `usuarios`
@@ -261,6 +300,12 @@ ALTER TABLE `arquivos`
 --
 ALTER TABLE `despesas`
   ADD CONSTRAINT `despesas_ibfk_1` FOREIGN KEY (`projeto_id`) REFERENCES `projetos` (`id`) ON DELETE CASCADE;
+
+--
+-- Restrições para tabelas `projetos`
+--
+ALTER TABLE `projetos`
+  ADD CONSTRAINT `projetos_ibfk_1` FOREIGN KEY (`cliente_id`) REFERENCES `clientes` (`id`) ON DELETE SET NULL;
 
 --
 -- Restrições para tabelas `recebimentos`

@@ -78,9 +78,9 @@ tr.linha-clicavel:hover {
 
 /* Badges de Status */
 .badge-status {
-    padding: 6px 12px;
+    padding: 6px 10px;
     border-radius: 20px;
-    font-size: 0.75rem;
+    font-size: 0.6rem;
     font-weight: 900;
     text-transform: uppercase;
     letter-spacing: 0.5px;

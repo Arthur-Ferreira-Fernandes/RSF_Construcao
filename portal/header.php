@@ -10,6 +10,7 @@
     <nav class="topbar-nav">
         <a href="dashboard.php"><i class="fas fa-chart-pie"></i> Painel</a>
         <a href="lista_projetos.php"><i class="fas fa-hard-hat"></i> Obras</a>
+        <a href="clientes.php"><i class="fas fa-handshake"></i> Clientes</a>
         <a href="arquivos.php"><i class="fas fa-folder-open"></i> Arquivos</a>
         
         <?php if (isset($_SESSION['nivel_acesso']) && $_SESSION['nivel_acesso'] === 'admin'): ?>

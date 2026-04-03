@@ -234,9 +234,11 @@ if (isset($_GET['excluir_arquivo'])) {
 // =========================================================================
 try {
     // 7.1. Dados do Projeto e do Engenheiro Responsável
-    $sql_projeto = "SELECT p.*, u.nome AS engenheiro_nome, u.telefone AS engenheiro_telefone 
+    $sql_projeto = "SELECT p.*, u.nome AS engenheiro_nome, u.telefone AS engenheiro_telefone, 
+                           c.nome AS cliente_nome, c.telefone AS cliente_telefone 
                     FROM projetos p 
                     LEFT JOIN usuarios u ON p.engenheiro_responsavel = u.id 
+                    LEFT JOIN clientes c ON p.cliente_id = c.id 
                     WHERE p.id = :id LIMIT 1";
     $stmt = $pdo->prepare($sql_projeto);
     $stmt->execute([':id' => $id_projeto]);
@@ -367,6 +369,13 @@ function getStatusClass($status) {
         </div>
 
         <div class="info-grid" style="margin-bottom: 20px;">
+            <div class="info-card" style="border-left: 4px solid #3498db;">
+                <h3 style="color: #3498db;"><i class="fas fa-handshake"></i> Cliente Contratante</h3>
+                <p style="font-weight: bold;"><?= htmlspecialchars($projeto['cliente_nome'] ?? 'Cliente não vinculado') ?></p>
+                <?php if (!empty($projeto['cliente_telefone'])): ?>
+                    <p class="sub-info"><i class="fas fa-phone"></i> <?= htmlspecialchars($projeto['cliente_telefone']) ?></p>
+                <?php endif; ?>
+            </div>
             <div class="info-card destaque-rt">
                 <h3><i class="fas fa-user-tie"></i> Responsável Técnico</h3>
                 <p><?= htmlspecialchars($projeto['engenheiro_nome'] ?? 'Não Atribuído') ?></p>

@@ -15,6 +15,9 @@ try {
     die("Erro ao carregar lista de engenheiros.");
 }
 
+$stmt_cli = $pdo->query("SELECT id, nome FROM clientes WHERE status = 'Ativo' ORDER BY nome ASC");
+$clientes = $stmt_cli->fetchAll();
+
 $mensagem = '';
 $tipo_mensagem = '';
 
@@ -36,19 +39,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tipo_mensagem = "erro";
     } else {
         try {
-            $sql = "INSERT INTO projetos (nome, engenheiro_responsavel, valor, descricao, endereco, data_inicio) 
-                    VALUES (:nome, :engenheiro, :valor, :descricao, :endereco, :data_inicio)";
-            
+            $cliente_id = !empty($_POST['cliente_id']) ? $_POST['cliente_id'] : null;
+
+            $sql = "INSERT INTO projetos (nome, descricao, endereco, engenheiro_responsavel, cliente_id, data_inicio, valor, status) 
+            VALUES (:nome, :descricao, :endereco, :engenheiro_responsavel, :cliente_id, :data_inicio, :valor, :status)";
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
                 ':nome' => $nome,
-                ':engenheiro' => $engenheiro_id, 
-                ':valor' => $valor,
                 ':descricao' => $descricao,
                 ':endereco' => $endereco,
-                ':data_inicio' => $data_inicio
+                ':engenheiro_responsavel' => $engenheiro_responsavel,
+                ':cliente_id' => $cliente_id,
+                ':data_inicio' => $data_inicio,
+                ':valor' => $valor,
+                ':status' => $status
             ]);
-
             $mensagem = "Projeto cadastrado com sucesso!";
             $tipo_mensagem = "sucesso";
 
@@ -112,6 +117,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     </option>
                                 <?php endforeach; ?>
                                 
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="cliente_id">Cliente / Contratante</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-handshake" style="z-index: 1;"></i>
+                            <select id="cliente_id" name="cliente_id" style="padding-left: 40px; width: 100%;">
+                                <option value="">-- Selecione o Cliente (Opcional) --</option>
+                                <?php foreach ($clientes as $cli): ?>
+                                    <option value="<?= $cli['id'] ?>"><?= htmlspecialchars($cli['nome']) ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                     </div>

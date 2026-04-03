@@ -65,6 +65,8 @@ try {
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../styles/dashboard.css">
+    <link rel="icon" type="image/png" href="../img/logo.png">
+    
 </head>
 <body>
 
@@ -168,6 +170,14 @@ try {
                         <i class="fas fa-folder-open"></i>
                         <h3>Gestor de Arquivos</h3>
                         <p>Envie e consulte Plantas, ARTs, Relatórios Fotográficos e Alvarás das obras.</p>
+                    </div>
+                </a>
+
+                <a href="clientes.php">
+                    <div class="card" style="border-left-color: #3498db;">
+                        <i class="fas fa-handshake" style="color: #3498db;"></i>
+                        <h3>Base de Clientes</h3>
+                        <p>Cadastre contratantes, gerencie os contatos e acompanhe quantas obras cada um possui.</p>
                     </div>
                 </a>
 

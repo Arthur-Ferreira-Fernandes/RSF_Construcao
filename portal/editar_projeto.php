@@ -2,94 +2,98 @@
 session_start();
 require_once 'scripts/conexao.php';
 
-if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
-    header("Location: login.php");
-    exit;
+// 1. Trava de segurança principal (Apenas Admin ou Gestor)
+if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true || $_SESSION['nivel_acesso'] !== 'admin') {
+    die("<h2 style='color:#fff; text-align:center; margin-top:50px;'>Acesso Negado. Apenas administradores podem editar as informações base da obra. <a href='dashboard.php' style='color:#FFCC00;'>Voltar</a></h2>");
+}
+
+$id_projeto = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+if (!$id_projeto) {
+    die("<h2 style='color:#fff; text-align:center; margin-top:50px;'>Projeto inválido. <a href='lista_projetos.php' style='color:#FFCC00;'>Voltar</a></h2>");
 }
 
 $mensagem = '';
 $tipo_mensagem = '';
 
-$id_projeto = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
-if (!$id_projeto && $_SERVER['REQUEST_METHOD'] !== 'POST') {
-    die("<h2 style='color:#fff; text-align:center; margin-top:50px;'>ID de projeto inválido. <a href='lista_projetos.php' style='color:#FFCC00;'>Voltar</a></h2>");
-}
-
-$lista_engenheiros = [];
-try {
-    $stmt_eng = $pdo->query("SELECT id, nome FROM usuarios WHERE status = 'Ativo' ORDER BY nome ASC");
-    $lista_engenheiros = $stmt_eng->fetchAll();
-} catch (PDOException $e) {
-    die("Erro ao carregar lista de engenheiros.");
-}
-
+// =========================================================================
+// PROCESSA A ATUALIZAÇÃO DO PROJETO
+// =========================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    
-    $id_projeto_post = filter_input(INPUT_POST, 'id_projeto', FILTER_VALIDATE_INT);
     $nome = trim($_POST['nome']);
-    $engenheiro_id = trim($_POST['engenheiro_id']);
     $descricao = trim($_POST['descricao']);
     $endereco = trim($_POST['endereco']);
+    $engenheiro_responsavel = !empty($_POST['engenheiro_responsavel']) ? $_POST['engenheiro_responsavel'] : null;
+    $cliente_id = !empty($_POST['cliente_id']) ? $_POST['cliente_id'] : null; // NOVO: Captura o cliente
     $data_inicio = $_POST['data_inicio'];
     $status = $_POST['status'];
-    
+
     $valor_post = $_POST['valor'] ?? '0';
     $valor_post = str_replace('.', '', $valor_post);
     $valor_post = str_replace(',', '.', $valor_post);
     $valor = (float) $valor_post;
 
-    if (empty($nome) || empty($engenheiro_id) || empty($valor) || empty($endereco) || empty($data_inicio)) {
-        $mensagem = "Preencha todos os campos obrigatórios.";
+    if (empty($nome) || empty($data_inicio)) {
+        $mensagem = "O nome da obra e a data de início são obrigatórios.";
         $tipo_mensagem = "erro";
-        $id_projeto = $id_projeto_post; 
     } else {
         try {
-            $sql = "UPDATE projetos SET 
-                    nome = :nome, 
-                    engenheiro_responsavel = :engenheiro, 
-                    valor = :valor, 
-                    descricao = :descricao, 
-                    endereco = :endereco, 
-                    data_inicio = :data_inicio,
-                    status = :status
+            // NOVO: A instrução UPDATE agora inclui o cliente_id
+            $sql = "UPDATE projetos 
+                    SET nome = :nome, descricao = :descricao, endereco = :endereco, 
+                        engenheiro_responsavel = :engenheiro_responsavel, cliente_id = :cliente_id, 
+                        data_inicio = :data_inicio, valor = :valor, status = :status 
                     WHERE id = :id";
-            
             $stmt = $pdo->prepare($sql);
+            
             $stmt->execute([
                 ':nome' => $nome,
-                ':engenheiro' => $engenheiro_id,
-                ':valor' => $valor,
                 ':descricao' => $descricao,
                 ':endereco' => $endereco,
+                ':engenheiro_responsavel' => $engenheiro_responsavel,
+                ':cliente_id' => $cliente_id,
                 ':data_inicio' => $data_inicio,
+                ':valor' => $valor,
                 ':status' => $status,
-                ':id' => $id_projeto_post
+                ':id' => $id_projeto
             ]);
 
-            header("Location: detalhes_projeto.php?id=" . $id_projeto_post . "&msg=atualizado");
+            header("Location: detalhes_projeto.php?id=" . $id_projeto . "&msg=atualizado");
             exit;
 
         } catch (PDOException $e) {
-            $mensagem = "Erro ao atualizar o projeto no banco de dados.";
+            $mensagem = "Erro ao atualizar os dados do projeto no banco de dados.";
             $tipo_mensagem = "erro";
-            $id_projeto = $id_projeto_post;
         }
     }
 }
 
+// =========================================================================
+// CARREGA OS DADOS ATUAIS DA OBRA PARA PREENCHER O FORMULÁRIO
+// =========================================================================
 try {
     $stmt = $pdo->prepare("SELECT * FROM projetos WHERE id = :id LIMIT 1");
     $stmt->execute([':id' => $id_projeto]);
-    $projeto_atual = $stmt->fetch();
-
-    if (!$projeto_atual) {
-        die("<h2 style='color:#fff; text-align:center; margin-top:50px;'>Obra não encontrada. <a href='lista_projetos.php' style='color:#FFCC00;'>Voltar</a></h2>");
+    $projeto = $stmt->fetch();
+    
+    if (!$projeto) {
+        die("<h2 style='color:#fff; text-align:center; margin-top:50px;'>Obra não encontrada.</h2>");
     }
 } catch (PDOException $e) {
-    die("Erro ao buscar dados do projeto.");
+    die("Erro ao carregar os dados.");
 }
 
-$valor_formatado = number_format($projeto_atual['valor'], 2, ',', '.');
+// =========================================================================
+// CARREGA LISTAS PARA OS DROPDOWNS (SELECTS)
+// =========================================================================
+// 1. Busca os engenheiros ativos
+$stmt_eng = $pdo->query("SELECT id, nome FROM usuarios WHERE status = 'Ativo' ORDER BY nome ASC");
+$engenheiros = $stmt_eng->fetchAll();
+
+// 2. Busca os clientes ativos
+$stmt_cli = $pdo->query("SELECT id, nome FROM clientes WHERE status = 'Ativo' ORDER BY nome ASC");
+$clientes = $stmt_cli->fetchAll();
+
+$valor_formatado = number_format($projeto['valor'], 2, ',', '.');
 ?>
 
 <!DOCTYPE html>
@@ -97,11 +101,10 @@ $valor_formatado = number_format($projeto_atual['valor'], 2, ',', '.');
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Editar Projeto | RSF Engenharia</title>
+    <title>Editar Obra | RSF Engenharia</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
     <link rel="stylesheet" href="../styles/projetos.css">
 </head>
 <body>
@@ -116,44 +119,37 @@ $valor_formatado = number_format($projeto_atual['valor'], 2, ',', '.');
             </div>
         <?php endif; ?>
 
-        <div class="form-card">
-            <h2 style="color: #3498db;"><i class="fas fa-edit"></i> Editar Obra: <?= htmlspecialchars($projeto_atual['nome']) ?></h2>
+        <div class="form-card" style="max-width: 800px; margin: 0 auto;">
+            <h2><i class="fas fa-edit"></i> Editar Dados da Obra</h2>
+            <p style="color: #aaa; font-size: 0.9rem; margin-top: -15px; margin-bottom: 25px;">
+                Atualize o valor orçado, o status ou vincule novos responsáveis.
+            </p>
             
-            <form method="POST" action="editar_projeto.php">
-                
-                <input type="hidden" name="id_projeto" value="<?= $id_projeto ?>">
-
+            <form method="POST" action="editar_projeto.php?id=<?= $id_projeto ?>">
                 <div class="form-grid">
                     
                     <div class="form-group full-width">
-                        <label for="nome">Nome do Projeto *</label>
+                        <label for="nome">Nome do Projeto / Obra *</label>
                         <div class="input-icon-wrapper">
-                            <i class="fas fa-building"></i>
-                            <input type="text" id="nome" name="nome" value="<?= htmlspecialchars($projeto_atual['nome']) ?>" required>
+                            <i class="fas fa-hard-hat"></i>
+                            <input type="text" id="nome" name="nome" value="<?= htmlspecialchars($projeto['nome']) ?>" required>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="status">Status da Obra *</label>
-                        <div class="input-icon-wrapper">
-                            <i class="fas fa-tasks" style="z-index: 1;"></i>
-                            <select id="status" name="status" required style="padding-left: 40px; width: 100%;">
-                                <option value="Em Orçamento" <?= ($projeto_atual['status'] == 'Em Orçamento') ? 'selected' : '' ?>>Em Orçamento</option>
-                                <option value="Em Andamento" <?= ($projeto_atual['status'] == 'Em Andamento') ? 'selected' : '' ?>>Em Andamento</option>
-                                <option value="Pausado" <?= ($projeto_atual['status'] == 'Pausado') ? 'selected' : '' ?>>Pausado</option>
-                                <option value="Concluído" <?= ($projeto_atual['status'] == 'Concluído') ? 'selected' : '' ?>>Concluído</option>
-                            </select>
-                        </div>
+                    <div class="form-group full-width">
+                        <label for="descricao">Escopo / Descrição Técnica</label>
+                        <textarea id="descricao" name="descricao" rows="3" placeholder="Descreva o que será feito na obra..."><?= htmlspecialchars($projeto['descricao']) ?></textarea>
                     </div>
 
                     <div class="form-group">
-                        <label for="engenheiro">Engenheiro Responsável (RT) *</label>
+                        <label for="cliente_id">Cliente Contratante</label>
                         <div class="input-icon-wrapper">
-                            <i class="fas fa-user-tie" style="z-index: 1;"></i>
-                            <select id="engenheiro" name="engenheiro_id" required style="padding-left: 40px; width: 100%;">
-                                <?php foreach ($lista_engenheiros as $eng): ?>
-                                    <option value="<?= $eng['id'] ?>" <?= ($projeto_atual['engenheiro_responsavel'] == $eng['id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($eng['nome']) ?>
+                            <i class="fas fa-handshake" style="z-index: 1;"></i>
+                            <select id="cliente_id" name="cliente_id" style="padding-left: 40px; width: 100%;">
+                                <option value="">-- Sem Cliente Vinculado --</option>
+                                <?php foreach ($clientes as $cli): ?>
+                                    <option value="<?= $cli['id'] ?>" <?= ($projeto['cliente_id'] == $cli['id']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($cli['nome']) ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -161,35 +157,63 @@ $valor_formatado = number_format($projeto_atual['valor'], 2, ',', '.');
                     </div>
 
                     <div class="form-group">
-                        <label for="valor">Valor Orçado da Obra *</label>
+                        <label for="engenheiro_responsavel">Engenheiro (RT)</label>
                         <div class="input-icon-wrapper">
-                            <span class="prefix">R$</span>
-                            <input type="text" id="valor" name="valor" value="<?= $valor_formatado ?>" onkeyup="mascaraMoeda(this)" required>
+                            <i class="fas fa-user-tie" style="z-index: 1;"></i>
+                            <select id="engenheiro_responsavel" name="engenheiro_responsavel" style="padding-left: 40px; width: 100%;">
+                                <option value="">-- Não Atribuído --</option>
+                                <?php foreach ($engenheiros as $eng): ?>
+                                    <option value="<?= $eng['id'] ?>" <?= ($projeto['engenheiro_responsavel'] == $eng['id']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($eng['nome']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="endereco">Endereço da Obra</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-map-marker-alt"></i>
+                            <input type="text" id="endereco" name="endereco" value="<?= htmlspecialchars($projeto['endereco']) ?>">
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label for="data_inicio">Data de Início da Obra *</label>
-                        <input type="date" id="data_inicio" name="data_inicio" value="<?= htmlspecialchars($projeto_atual['data_inicio']) ?>" required>
+                        <label for="data_inicio">Data de Início *</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-calendar-alt"></i>
+                            <input type="date" id="data_inicio" name="data_inicio" value="<?= $projeto['data_inicio'] ?>" required>
+                        </div>
                     </div>
 
-                    <div class="form-group full-width">
-                        <label for="endereco">Endereço Completo da Obra *</label>
+                    <div class="form-group">
+                        <label for="status">Status da Obra *</label>
                         <div class="input-icon-wrapper">
-                            <i class="fas fa-map-marker-alt"></i>
-                            <input type="text" id="endereco" name="endereco" value="<?= htmlspecialchars($projeto_atual['endereco']) ?>" required>
+                            <i class="fas fa-info-circle" style="z-index: 1;"></i>
+                            <select id="status" name="status" style="padding-left: 40px; width: 100%;">
+                                <option value="Em Orçamento" <?= ($projeto['status'] == 'Em Orçamento') ? 'selected' : '' ?>>Em Orçamento</option>
+                                <option value="Em Andamento" <?= ($projeto['status'] == 'Em Andamento') ? 'selected' : '' ?>>Em Andamento</option>
+                                <option value="Pausado" <?= ($projeto['status'] == 'Pausado') ? 'selected' : '' ?>>Pausado</option>
+                                <option value="Concluído" <?= ($projeto['status'] == 'Concluído') ? 'selected' : '' ?>>Concluído</option>
+                            </select>
                         </div>
                     </div>
 
                     <div class="form-group full-width">
-                        <label for="descricao">Descrição / Escopo do Projeto</label>
-                        <textarea id="descricao" name="descricao"><?= htmlspecialchars($projeto_atual['descricao']) ?></textarea>
+                        <label for="valor">Valor Orçado Total (R$)</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-dollar-sign"></i>
+                            <input type="text" id="valor" name="valor" value="<?= $valor_formatado ?>" onkeyup="mascaraMoeda(this)">
+                        </div>
+                        <small style="color: #888; margin-top: 5px;"><i class="fas fa-exclamation-triangle"></i> Alterar o valor orçado recalculará a porcentagem da barra de progresso no painel da obra.</small>
                     </div>
 
                 </div>
 
-                <div class="form-actions">
-                    <button type="submit" class="btn-submit" style="background-color: #3498db; color: #fff;"><i class="fas fa-sync-alt"></i> Atualizar Dados da Obra</button>
+                <div class="form-actions" style="margin-top: 20px;">
+                    <a href="detalhes_projeto.php?id=<?= $id_projeto ?>" class="btn-submit" style="background-color: transparent; border: 1px solid #aaa; color: #aaa; text-decoration: none; text-align: center;">Cancelar</a>
+                    <button type="submit" class="btn-submit" style="width: 100%;"><i class="fas fa-save"></i> Salvar Alterações</button>
                 </div>
             </form>
         </div>
@@ -207,6 +231,5 @@ $valor_formatado = number_format($projeto_atual['valor'], 2, ',', '.');
             input.value = valor;
         }
     </script>
-
 </body>
 </html>
