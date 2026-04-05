@@ -109,14 +109,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['ac
     }
 }
 
-// LÓGICA PARA REABRIR A SEMANA (DESFAZER FECHAMENTO)
+// =========================================================================
+// LÓGICA PARA REABRIR A SEMANA E LIMPAR O CAIXA (DESFAZER FECHAMENTO)
+// =========================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'desfazer_semana') {
     if ($_SESSION['nivel_acesso'] === 'admin') {
         $id_acomp = filter_input(INPUT_POST, 'acompanhamento_id', FILTER_VALIDATE_INT);
+        
         if ($id_acomp) {
+            // 1. Descobre qual era o título da semana para localizar o pagamento no caixa
+            $stmt_titulo = $pdo->prepare("SELECT titulo_semana FROM acompanhamento_semanal WHERE id = ?");
+            $stmt_titulo->execute([$id_acomp]);
+            $semana = $stmt_titulo->fetch();
+
+            // 2. Reabre a etapa e limpa o relato da engenharia
             $pdo->prepare("UPDATE acompanhamento_semanal SET status = 'Pendente', diario_obra = NULL WHERE id = ?")->execute([$id_acomp]);
+            
+            // 3. Desmarca todas as caixinhas da checklist
             $pdo->prepare("UPDATE acompanhamento_itens SET concluido = 0 WHERE acompanhamento_id = ?")->execute([$id_acomp]);
-            $mensagem = "Etapa reaberta! O valor financeiro recebido continua no caixa, exclua-o na tabela se necessário."; $tipo_mensagem = "sucesso";
+            
+            // 4. MÁGICA: Procura o pagamento exato dessa semana no caixa e arquiva automaticamente
+            if ($semana) {
+                $descricao_pagamento = 'Medição - ' . $semana['titulo_semana'];
+                $pdo->prepare("UPDATE recebimentos SET status = 'Arquivado' WHERE projeto_id = ? AND descricao = ? AND status = 'Ativo'")
+                    ->execute([$id_projeto, $descricao_pagamento]);
+            }
+
+            $mensagem = "Etapa reaberta e o valor financeiro foi removido do caixa automaticamente!"; 
+            $tipo_mensagem = "sucesso";
         }
     }
 }
@@ -223,6 +243,7 @@ function getStatusClass($status) {
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../styles/detalhes.css">
+    <link rel="icon" type="image/png" href="../img/logo.png">
 </head>
 <body>
 
@@ -298,7 +319,7 @@ function getStatusClass($status) {
                 
                 <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
                 <div style="background: #222; padding: 10px 20px; border-radius: 4px; border: 1px solid #444;">
-                    <span style="color: #aaa; font-size: 0.85rem; text-transform: uppercase;">Meta de Custos</span>
+                    <span style="color: #aaa; font-size: 0.85rem; text-transform: uppercase;">Meta de Pagamento por Semana</span>
                     <strong style="display: block; color: #f1c40f; font-size: 1.2rem;">R$ <?= number_format($orcamento_por_periodo, 2, ',', '.') ?></strong>
                 </div>
                 <?php endif; ?>
@@ -376,7 +397,7 @@ function getStatusClass($status) {
                                     <form method="POST" action="detalhes_projeto.php?id=<?= $id_projeto ?>" style="margin-top: 15px;">
                                         <input type="hidden" name="acao" value="desfazer_semana">
                                         <input type="hidden" name="acompanhamento_id" value="<?= $p['id_acomp'] ?>">
-                                        <button type="submit" onclick="return confirm('Deseja reabrir esta etapa? A checklist será desmarcada.');" style="width: 100%; border: 1px solid #e74c3c; color: #e74c3c; background: transparent; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: center; gap: 8px; align-items: center;">
+                                        <button type="submit" onclick="return confirm('Deseja reabrir esta etapa? A checklist será desmarcada e o pagamento desta semana será removido do caixa automaticamente.');" style="width: 100%; border: 1px solid #e74c3c; color: #e74c3c; background: transparent; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: center; gap: 8px; align-items: center;">
                                             <i class="fas fa-undo"></i> Desfazer Fechamento
                                         </button>
                                     </form>

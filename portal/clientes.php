@@ -107,6 +107,8 @@ try {
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../styles/dashboard.css">
+    <link rel="icon" type="image/png" href="../img/logo.png">
+
     <style>
         .table-wrapper { overflow-x: auto; background-color: #1a1a1a; border-radius: 8px; border: 1px solid #333; margin-top: 20px; }
         table { width: 100%; border-collapse: collapse; text-align: left; }

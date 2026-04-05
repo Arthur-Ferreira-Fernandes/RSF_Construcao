@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
             
             <div class="login-footer" style="margin-top: 20px; text-align: center; color: #666; font-size: 0.8rem;">
-                <p>Desenvolvido por Equipa Regra de 3</p>
+                <a href="../index.html" class="back-link"><i class="fas fa-arrow-left"></i> Voltar ao site principal</a>
             </div>
         </div>
     </div>

@@ -80,6 +80,8 @@ try {
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../styles/lista_projetos.css">
+    <link rel="icon" type="image/png" href="../img/logo.png">
+
     
     <style>
         .form-inline { display: inline-flex; align-items: center; gap: 5px; margin-right: 10px; }
