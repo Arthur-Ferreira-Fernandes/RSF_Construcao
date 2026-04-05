@@ -2,13 +2,21 @@
 session_start();
 require_once 'scripts/conexao.php';
 
-if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true || $_SESSION['nivel_acesso'] !== 'admin') {
-    die("<h2 style='color:#fff; text-align:center; margin-top:50px;'>Acesso Negado. <a href='dashboard.php' style='color:#FFCC00;'>Voltar</a></h2>");
+if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
+    header("Location: login.php");
+    exit;
+}
+
+// 2. Trava de Redirecionamento Invisível (Evita a tela branca sem CSS)
+// Apenas "admin" pode aceder. Se não for admin, é redirecionado para o seu respectivo painel.
+if ($_SESSION['nivel_acesso'] !== 'admin') {
+    $destino = ($_SESSION['nivel_acesso'] === 'cliente') ? 'lista_projetos.php' : 'dashboard.php';
+    header("Location: " . $destino);
+    exit;
 }
 
 $mensagem = '';
 $tipo_mensagem = '';
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
     
     if ($_POST['acao'] === 'mudar_nivel') {

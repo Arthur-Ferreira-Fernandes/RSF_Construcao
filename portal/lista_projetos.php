@@ -40,6 +40,12 @@ $sql = "SELECT p.id, p.nome, p.valor, p.status, p.data_inicio,
 
 $parametros = [];
 
+if (isset($_SESSION['nivel_acesso']) && $_SESSION['nivel_acesso'] === 'cliente') {
+    // Se for cliente, força a busca apenas para o ID dele!
+    $sql .= " AND p.cliente_id = :meu_id";
+    $parametros[':meu_id'] = $_SESSION['usuario_id']; // O ID da sessão dele
+}
+
 if (!empty($filtro_nome)) {
     $sql .= " AND p.nome LIKE :nome";
     $parametros[':nome'] = '%' . $filtro_nome . '%';
@@ -114,8 +120,15 @@ function getStatusClass($status) {
 
         <div class="header-acoes">
             <h2><i class="fas fa-hard-hat"></i> Portfólio de Obras</h2>
-            <a href="cadastrar_projeto.php" class="btn-novo"><i class="fas fa-plus"></i> Nova Obra</a>
+            <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
+                <a href="cadastrar_projeto.php" class="btn-novo"><i class="fas fa-plus"></i> Nova Obra</a>
+            <?php endif; ?>
         </div>
+
+        <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
+        <div class="filtros-card">
+           </div>
+        <?php endif; ?>
 
         <div class="filtros-card">
             <h3><i class="fas fa-filter"></i> Filtros de Pesquisa</h3>

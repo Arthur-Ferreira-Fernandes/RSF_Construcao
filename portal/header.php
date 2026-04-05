@@ -8,15 +8,15 @@
     </div>
     
     <nav class="topbar-nav">
-        <a href="dashboard.php"><i class="fas fa-chart-pie"></i> Painel</a>
         <a href="lista_projetos.php"><i class="fas fa-hard-hat"></i> Obras</a>
-        <a href="clientes.php"><i class="fas fa-handshake"></i> Clientes</a>
-        <a href="arquivos.php"><i class="fas fa-folder-open"></i> Arquivos</a>
-        
+        <?php if (isset($_SESSION['nivel_acesso']) && $_SESSION['nivel_acesso'] !== 'cliente'): ?>
+            <a href="dashboard.php"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="clientes.php"><i class="fas fa-handshake"></i> Clientes (CRM)</a>
+            <a href="arquivos.php"><i class="fas fa-folder"></i> Acervo Geral</a>
+        <?php endif; ?>
         <?php if (isset($_SESSION['nivel_acesso']) && $_SESSION['nivel_acesso'] === 'admin'): ?>
             <a href="gerenciar_equipe.php"><i class="fas fa-users-cog"></i> Equipe & Acessos</a>
         <?php endif; ?>
-        
         <a href="editar_perfil.php" style="color: #3498db;"><i class="fas fa-user-circle"></i> Minha Conta</a>
         <a href="scripts/logout.php" class="btn-sair"><i class="fas fa-sign-out-alt"></i> Sair</a>
     </nav>

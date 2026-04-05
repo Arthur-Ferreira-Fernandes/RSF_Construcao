@@ -7,6 +7,14 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
     exit;
 }
 
+// 2. Trava de Redirecionamento Invisível (Evita a tela branca sem CSS)
+// Apenas "admin" pode aceder. Se não for admin, é redirecionado para o seu respectivo painel.
+if ($_SESSION['nivel_acesso'] !== 'admin') {
+    $destino = ($_SESSION['nivel_acesso'] === 'cliente') ? 'lista_projetos.php' : 'dashboard.php';
+    header("Location: " . $destino);
+    exit;
+}
+
 $mensagem = '';
 $tipo_mensagem = '';
 

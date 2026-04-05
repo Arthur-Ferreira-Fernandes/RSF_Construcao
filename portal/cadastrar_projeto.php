@@ -2,48 +2,56 @@
 session_start();
 require_once 'scripts/conexao.php';
 
+// 1. Trava de segurança (Apenas Administradores podem criar obras)
 if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
     header("Location: login.php");
     exit;
 }
 
-$lista_engenheiros = [];
-try {
-    $stmt_eng = $pdo->query("SELECT id, nome FROM usuarios WHERE status = 'Ativo' ORDER BY nome ASC");
-    $lista_engenheiros = $stmt_eng->fetchAll();
-} catch (PDOException $e) {
-    die("Erro ao carregar lista de engenheiros.");
+// 2. Trava de Redirecionamento Invisível (Evita a tela branca sem CSS)
+// Apenas "admin" pode aceder. Se não for admin, é redirecionado para o seu respectivo painel.
+if ($_SESSION['nivel_acesso'] !== 'admin') {
+    $destino = ($_SESSION['nivel_acesso'] === 'cliente') ? 'lista_projetos.php' : 'dashboard.php';
+    header("Location: " . $destino);
+    exit;
 }
-
-$stmt_cli = $pdo->query("SELECT id, nome FROM clientes WHERE status = 'Ativo' ORDER BY nome ASC");
-$clientes = $stmt_cli->fetchAll();
 
 $mensagem = '';
 $tipo_mensagem = '';
 
+// =========================================================================
+// PROCESSA O CADASTRO DO PROJETO E REDIRECIONA PARA O CRONOGRAMA
+// =========================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    
     $nome = trim($_POST['nome']);
-    $engenheiro_id = trim($_POST['engenheiro_id']); 
     $descricao = trim($_POST['descricao']);
     $endereco = trim($_POST['endereco']);
-    $data_inicio = $_POST['data_inicio'];
+    $engenheiro_responsavel = !empty($_POST['engenheiro_responsavel']) ? $_POST['engenheiro_responsavel'] : null;
     
+    // Novos campos do CRM e Planejamento
+    $cliente_id = !empty($_POST['cliente_id']) ? $_POST['cliente_id'] : null;
+    $data_inicio = $_POST['data_inicio'];
+    $data_fim_prevista = !empty($_POST['data_fim_prevista']) ? $_POST['data_fim_prevista'] : null;
+    $frequencia_medicao = $_POST['frequencia_medicao'] ?? 'Semanal';
+    
+    $status = $_POST['status'];
+
+    // Tratamento do valor financeiro (Remover pontos e trocar vírgula por ponto)
     $valor_post = $_POST['valor'] ?? '0';
-    $valor_post = str_replace('.', '', $valor_post); 
-    $valor_post = str_replace(',', '.', $valor_post); 
+    $valor_post = str_replace('.', '', $valor_post);
+    $valor_post = str_replace(',', '.', $valor_post);
     $valor = (float) $valor_post;
 
-    if (empty($nome) || empty($engenheiro_id) || empty($valor) || empty($endereco) || empty($data_inicio)) {
-        $mensagem = "Preencha todos os campos obrigatórios.";
+    if (empty($nome) || empty($data_inicio)) {
+        $mensagem = "O nome da obra e a data de início são obrigatórios.";
         $tipo_mensagem = "erro";
     } else {
         try {
-            $cliente_id = !empty($_POST['cliente_id']) ? $_POST['cliente_id'] : null;
-
-            $sql = "INSERT INTO projetos (nome, descricao, endereco, engenheiro_responsavel, cliente_id, data_inicio, valor, status) 
-            VALUES (:nome, :descricao, :endereco, :engenheiro_responsavel, :cliente_id, :data_inicio, :valor, :status)";
+            // A INSTRUÇÃO SQL COMPLETA (Com Cliente, Data Fim e Frequência)
+            $sql = "INSERT INTO projetos (nome, descricao, endereco, engenheiro_responsavel, cliente_id, data_inicio, data_fim_prevista, frequencia_medicao, valor, status) 
+                    VALUES (:nome, :descricao, :endereco, :engenheiro_responsavel, :cliente_id, :data_inicio, :data_fim_prevista, :frequencia_medicao, :valor, :status)";
             $stmt = $pdo->prepare($sql);
+            
             $stmt->execute([
                 ':nome' => $nome,
                 ':descricao' => $descricao,
@@ -51,11 +59,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':engenheiro_responsavel' => $engenheiro_responsavel,
                 ':cliente_id' => $cliente_id,
                 ':data_inicio' => $data_inicio,
+                ':data_fim_prevista' => $data_fim_prevista,
+                ':frequencia_medicao' => $frequencia_medicao,
                 ':valor' => $valor,
                 ':status' => $status
             ]);
-            $mensagem = "Projeto cadastrado com sucesso!";
-            $tipo_mensagem = "sucesso";
+
+            // CAPTURA O ID DA OBRA RECÉM-CRIADA
+            $id_novo_projeto = $pdo->lastInsertId();
+            
+            // MAGIA DO FLUXO: Envia o gestor direto para desenhar o cronograma (Baseline)
+            header("Location: planejamento_cronograma.php?id=" . $id_novo_projeto);
+            exit;
 
         } catch (PDOException $e) {
             $mensagem = "Erro ao cadastrar o projeto no banco de dados.";
@@ -63,6 +78,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+// =========================================================================
+// CARREGA LISTAS PARA OS DROPDOWNS (SELECTS)
+// =========================================================================
+// 1. Busca os engenheiros ativos
+$stmt_eng = $pdo->query("SELECT id, nome FROM usuarios WHERE status = 'Ativo' ORDER BY nome ASC");
+$engenheiros = $stmt_eng->fetchAll();
+
+// 2. Busca os clientes ativos (CRM)
+$stmt_cli = $pdo->query("SELECT id, nome FROM clientes WHERE status = 'Ativo' ORDER BY nome ASC");
+$clientes = $stmt_cli->fetchAll();
 ?>
 
 <!DOCTYPE html>
@@ -70,11 +96,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastrar Projeto | RSF Engenharia</title>
+    <title>Nova Obra | RSF Engenharia</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
     <link rel="stylesheet" href="../styles/projetos.css">
 </head>
 <body>
@@ -89,44 +114,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php endif; ?>
 
-        <div class="form-card">
-            <h2><i class="fas fa-hard-hat"></i> Cadastrar Nova Obra / Projeto</h2>
+        <div class="form-card" style="max-width: 800px; margin: 0 auto;">
+            <h2><i class="fas fa-drafting-compass"></i> Abertura de Nova Obra</h2>
+            <p style="color: #aaa; font-size: 0.9rem; margin-top: -15px; margin-bottom: 25px;">
+                Preencha os dados base e as datas. Em seguida, você será levado ao planejamento do cronograma.
+            </p>
             
             <form method="POST" action="cadastrar_projeto.php">
                 <div class="form-grid">
                     
                     <div class="form-group full-width">
-                        <label for="nome">Nome do Projeto *</label>
+                        <label for="nome">Nome do Projeto / Obra *</label>
                         <div class="input-icon-wrapper">
-                            <i class="fas fa-building"></i>
-                            <input type="text" id="nome" name="nome" placeholder="Ex: Galpão Logístico Cajamar" required autofocus>
+                            <i class="fas fa-hard-hat"></i>
+                            <input type="text" id="nome" name="nome" placeholder="Ex: Residência Alto Padrão - Lote 10" required autofocus>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="engenheiro">Engenheiro Responsável (RT) *</label>
-                        <div class="input-icon-wrapper">
-                            <i class="fas fa-user-tie" style="z-index: 1;"></i>
-                            
-                            <select id="engenheiro" name="engenheiro_id" required style="padding-left: 40px; width: 100%;">
-                                <option value="" disabled selected>Selecione o RT da obra...</option>
-                                
-                                <?php foreach ($lista_engenheiros as $eng): ?>
-                                    <option value="<?= $eng['id'] ?>">
-                                        <?= htmlspecialchars($eng['nome']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                                
-                            </select>
-                        </div>
+                    <div class="form-group full-width">
+                        <label for="descricao">Escopo / Descrição Técnica</label>
+                        <textarea id="descricao" name="descricao" rows="3" placeholder="Descreva de forma breve o escopo da obra..."></textarea>
                     </div>
 
                     <div class="form-group">
-                        <label for="cliente_id">Cliente / Contratante</label>
+                        <label for="cliente_id">Cliente Contratante</label>
                         <div class="input-icon-wrapper">
                             <i class="fas fa-handshake" style="z-index: 1;"></i>
                             <select id="cliente_id" name="cliente_id" style="padding-left: 40px; width: 100%;">
-                                <option value="">-- Selecione o Cliente (Opcional) --</option>
+                                <option value="">-- Sem Cliente Vinculado --</option>
                                 <?php foreach ($clientes as $cli): ?>
                                     <option value="<?= $cli['id'] ?>"><?= htmlspecialchars($cli['nome']) ?></option>
                                 <?php endforeach; ?>
@@ -135,35 +150,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
 
                     <div class="form-group">
-                        <label for="valor">Valor Orçado da Obra *</label>
+                        <label for="engenheiro_responsavel">Engenheiro (RT)</label>
                         <div class="input-icon-wrapper">
-                            <span class="prefix">R$</span>
-                            <input type="text" id="valor" name="valor" placeholder="0,00" onkeyup="mascaraMoeda(this)" required>
+                            <i class="fas fa-user-tie" style="z-index: 1;"></i>
+                            <select id="engenheiro_responsavel" name="engenheiro_responsavel" style="padding-left: 40px; width: 100%;">
+                                <option value="">-- Não Atribuído --</option>
+                                <?php foreach ($engenheiros as $eng): ?>
+                                    <option value="<?= $eng['id'] ?>"><?= htmlspecialchars($eng['nome']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                     </div>
 
                     <div class="form-group full-width">
-                        <label for="endereco">Endereço Completo da Obra *</label>
+                        <label for="endereco">Endereço da Obra</label>
                         <div class="input-icon-wrapper">
                             <i class="fas fa-map-marker-alt"></i>
-                            <input type="text" id="endereco" name="endereco" placeholder="Rua, Número, Bairro, Cidade - SP" required>
+                            <input type="text" id="endereco" name="endereco" placeholder="Logradouro, Bairro, Cidade - UF">
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label for="data_inicio">Data de Início da Obra *</label>
-                        <input type="date" id="data_inicio" name="data_inicio" required>
+                        <label for="data_inicio">Data de Início *</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-calendar-alt"></i>
+                            <input type="date" id="data_inicio" name="data_inicio" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="data_fim_prevista">Previsão de Término *</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-flag-checkered"></i>
+                            <input type="date" id="data_fim_prevista" name="data_fim_prevista" required>
+                        </div>
+                        <small style="color: #666; font-size: 0.75rem;"><i class="fas fa-info-circle"></i> Necessário para gerar as metas.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="frequencia_medicao">Frequência das Metas *</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-ruler-combined" style="z-index: 1;"></i>
+                            <select id="frequencia_medicao" name="frequencia_medicao" style="padding-left: 40px; width: 100%;">
+                                <option value="Semanal">Semanal</option>
+                                <option value="Diária">Diária</option>
+                                <option value="Mensal">Mensal</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="status">Status Inicial *</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-info-circle" style="z-index: 1;"></i>
+                            <select id="status" name="status" style="padding-left: 40px; width: 100%;">
+                                <option value="Em Orçamento">Em Orçamento</option>
+                                <option value="Em Andamento" selected>Em Andamento</option>
+                                <option value="Pausado">Pausado</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div class="form-group full-width">
-                        <label for="descricao">Descrição / Escopo do Projeto</label>
-                        <textarea id="descricao" name="descricao" placeholder="Detalhes técnicos, cronograma macro, observações importantes..."></textarea>
+                        <label for="valor">Valor do Contrato Global (R$)</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-dollar-sign"></i>
+                            <input type="text" id="valor" name="valor" placeholder="0,00" onkeyup="mascaraMoeda(this)">
+                        </div>
+                        <small style="color: #888; font-size: 0.8rem; margin-top: 5px;"><i class="fas fa-calculator"></i> Este valor será dividido automaticamente pela quantidade de períodos gerados.</small>
                     </div>
 
                 </div>
 
-                <div class="form-actions">
-                    <button type="submit" class="btn-submit"><i class="fas fa-save"></i> Salvar Projeto</button>
+                <div class="form-actions" style="margin-top: 25px;">
+                    <a href="lista_projetos.php" class="btn-submit" style="background-color: transparent; border: 1px solid #aaa; color: #aaa; text-decoration: none; text-align: center;">Cancelar</a>
+                    <button type="submit" class="btn-submit" style="width: 100%;"><i class="fas fa-arrow-right"></i> Prosseguir para o Cronograma</button>
                 </div>
             </form>
         </div>
@@ -173,23 +234,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script>
         function mascaraMoeda(input) {
             let valor = input.value;
-            
             valor = valor.replace(/\D/g, "");
-            
-            if (valor === "") {
-                input.value = "";
-                return;
-            }
-
+            if (valor === "") { input.value = ""; return; }
             valor = (parseInt(valor) / 100).toFixed(2) + '';
-            
             valor = valor.replace(".", ",");
-            
             valor = valor.replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.');
-            
             input.value = valor;
         }
     </script>
-
 </body>
 </html>

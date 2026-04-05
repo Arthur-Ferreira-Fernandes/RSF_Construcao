@@ -7,64 +7,53 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
     exit;
 }
 
+$id_sessao = $_SESSION['usuario_id'];
+$nivel_acesso = $_SESSION['nivel_acesso'] ?? '';
+
+// INTELIGÊNCIA DE TABELAS E COLUNAS
+$tabela = ($nivel_acesso === 'cliente') ? 'clientes' : 'usuarios';
+$coluna_senha = ($nivel_acesso === 'cliente') ? 'senha' : 'senha_hash';
+
 $mensagem = '';
 $tipo_mensagem = '';
-$id_usuario = $_SESSION['usuario_id'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nome = trim($_POST['nome']);
-    $telefone = trim($_POST['telefone']);
-    $email = filter_var(trim($_POST['email']), FILTER_SANITIZE_EMAIL);
-    $nova_senha = $_POST['nova_senha']; 
+    $email = trim($_POST['email']);
+    $senha_nova = $_POST['senha_nova'];
 
-    if (empty($nome) || empty($telefone) || empty($email)) {
-        $mensagem = "Nome, telefone e e-mail são obrigatórios.";
-        $tipo_mensagem = "erro";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $mensagem = "Formato de e-mail inválido.";
+    if (empty($nome) || empty($email)) {
+        $mensagem = "Nome e E-mail são obrigatórios.";
         $tipo_mensagem = "erro";
     } else {
         try {
-            if (!empty($nova_senha)) {
-                if (strlen($nova_senha) < 6) {
-                    throw new Exception("A nova senha deve ter pelo menos 6 caracteres.");
-                }
-                
-                $senha_hash = password_hash($nova_senha, PASSWORD_DEFAULT);
-                $sql = "UPDATE usuarios SET nome = :nome, telefone = :telefone, email = :email, senha_hash = :senha WHERE id = :id";
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute([':nome' => $nome, ':telefone' => $telefone, ':email' => $email, ':senha' => $senha_hash, ':id' => $id_usuario]);
+            if (!empty($senha_nova)) {
+                $senha_hash = password_hash($senha_nova, PASSWORD_DEFAULT);
+                // Utiliza a coluna correta de acordo com quem está a fazer login
+                $stmt = $pdo->prepare("UPDATE $tabela SET nome = ?, email = ?, $coluna_senha = ? WHERE id = ?");
+                $stmt->execute([$nome, $email, $senha_hash, $id_sessao]);
             } else {
-                $sql = "UPDATE usuarios SET nome = :nome, telefone = :telefone, email = :email WHERE id = :id";
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute([':nome' => $nome, ':telefone' => $telefone, ':email' => $email, ':id' => $id_usuario]);
+                $stmt = $pdo->prepare("UPDATE $tabela SET nome = ?, email = ? WHERE id = ?");
+                $stmt->execute([$nome, $email, $id_sessao]);
             }
-
-            $_SESSION['usuario_nome'] = $nome;
-
-            $mensagem = "Seu perfil foi atualizado com sucesso!";
+            
+            $_SESSION['nome_usuario'] = $nome;
+            $mensagem = "Perfil atualizado com sucesso!";
             $tipo_mensagem = "sucesso";
-
-        } catch (Exception $e) {
-            $mensagem = $e->getMessage();
-            $tipo_mensagem = "erro";
         } catch (PDOException $e) {
-            if ($e->getCode() == 23000) {
-                $mensagem = "Este e-mail já está sendo usado por outra pessoa.";
-            } else {
-                $mensagem = "Erro ao atualizar o perfil.";
-            }
+            $mensagem = "Erro ao atualizar. O e-mail já pode estar em uso.";
             $tipo_mensagem = "erro";
         }
     }
 }
 
 try {
-    $stmt = $pdo->prepare("SELECT nome, email, telefone FROM usuarios WHERE id = :id LIMIT 1");
-    $stmt->execute([':id' => $id_usuario]);
-    $dados_usuario = $stmt->fetch();
+    $stmt = $pdo->prepare("SELECT nome, email FROM $tabela WHERE id = ? LIMIT 1");
+    $stmt->execute([$id_sessao]);
+    $perfil = $stmt->fetch();
+    if (!$perfil) { die("Perfil não encontrado na base de dados."); }
 } catch (PDOException $e) {
-    die("Erro ao carregar seus dados.");
+    die("Erro ao carregar os dados do perfil.");
 }
 ?>
 
@@ -77,90 +66,63 @@ try {
     
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../styles/dashboard.css">
     
-    <link rel="stylesheet" href="../styles/projetos.css">
+    <style>
+        .form-card { 
+            background: #1a1a1a; 
+            padding: 30px; 
+            border-radius: 8px; 
+            border-top: 4px solid #3498db; 
+            max-width: 600px; 
+            margin: 40px auto; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); 
+        }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; color: #aaa; margin-bottom: 8px; font-weight: bold; font-size: 0.9rem; }
+        .form-group input { width: 100%; padding: 12px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        .form-group input:focus { border-color: #3498db; outline: none; }
+        .btn-salvar { background: #3498db; color: #fff; border: none; padding: 15px; width: 100%; font-weight: bold; font-size: 1.1rem; border-radius: 4px; cursor: pointer; transition: 0.3s; display: flex; justify-content: center; align-items: center; gap: 10px;}
+        .btn-salvar:hover { background: #2980b9; }
+    </style>
 </head>
 <body>
 
     <?php include 'header.php'; ?>
 
-    <main class="container">
+    <main class="container" style="padding: 20px;">
         
         <?php if (!empty($mensagem)): ?>
-            <div class="alerta <?= $tipo_mensagem ?>">
-                <?= htmlspecialchars($mensagem) ?>
+            <div style="max-width: 600px; margin: 0 auto 20px auto; padding: 15px; border-radius: 4px; font-weight: bold; background-color: <?= $tipo_mensagem === 'sucesso' ? 'rgba(46, 204, 113, 0.2)' : 'rgba(231, 76, 60, 0.2)' ?>; color: <?= $tipo_mensagem === 'sucesso' ? '#2ecc71' : '#e74c3c' ?>; border-left: 4px solid <?= $tipo_mensagem === 'sucesso' ? '#2ecc71' : '#e74c3c' ?>;">
+                <i class="fas <?= $tipo_mensagem === 'sucesso' ? 'fa-check-circle' : 'fa-exclamation-circle' ?>"></i> <?= htmlspecialchars($mensagem) ?>
             </div>
         <?php endif; ?>
 
-        <div class="form-card" style="max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #3498db;"><i class="fas fa-user-edit"></i> Configurações da Minha Conta</h2>
-            <p style="color: #aaa; font-size: 0.9rem; margin-top: -15px; margin-bottom: 25px;">
-                Mantenha suas informações de contato sempre atualizadas.
-            </p>
+        <div class="form-card">
+            <h2 style="margin-top: 0; color: #3498db; text-align: center;"><i class="fas fa-user-circle"></i> Meu Perfil</h2>
             
             <form method="POST" action="editar_perfil.php">
-                <div class="form-grid">
-                    
-                    <div class="form-group full-width" style="margin-bottom: 5px;">
-                        <label for="nome">Nome Completo *</label>
-                        <div class="input-icon-wrapper">
-                            <i class="fas fa-user"></i>
-                            <input type="text" id="nome" name="nome" value="<?= htmlspecialchars($dados_usuario['nome']) ?>" required>
-                        </div>
-                    </div>
-
-                    <div class="form-group full-width" style="margin-bottom: 5px;">
-                        <label for="telefone">Telefone / WhatsApp *</label>
-                        <div class="input-icon-wrapper">
-                            <i class="fas fa-phone-alt"></i>
-                            <input type="tel" id="telefone" name="telefone" value="<?= htmlspecialchars($dados_usuario['telefone'] ?? '') ?>" maxlength="15" oninput="mascaraTelefone(this)" required>
-                        </div>
-                    </div>
-
-                    <div class="form-group full-width" style="margin-bottom: 5px;">
-                        <label for="email">E-mail de Acesso *</label>
-                        <div class="input-icon-wrapper">
-                            <i class="fas fa-envelope"></i>
-                            <input type="email" id="email" name="email" value="<?= htmlspecialchars($dados_usuario['email']) ?>" required>
-                        </div>
-                    </div>
-
-                    <div class="form-group full-width" style="margin-bottom: 10px;">
-                        <label for="nova_senha">Nova Senha (Opcional)</label>
-                        <div class="input-icon-wrapper">
-                            <i class="fas fa-lock"></i>
-                            <input type="password" id="nova_senha" name="nova_senha" placeholder="Deixe em branco para não alterar">
-                        </div>
-                        <small style="color: #888; margin-top: 5px;"><i class="fas fa-info-circle"></i> Só preencha se quiser mudar a senha atual.</small>
-                    </div>
-
+                <div class="form-group">
+                    <label>Nome Completo</label>
+                    <input type="text" name="nome" value="<?= htmlspecialchars($perfil['nome'] ?? '') ?>" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>E-mail de Login</label>
+                    <input type="email" name="email" value="<?= htmlspecialchars($perfil['email'] ?? '') ?>" required>
+                </div>
+                
+                <div class="form-group" style="margin-top: 35px; border-top: 1px dashed #444; padding-top: 20px;">
+                    <label style="color: #f1c40f;"><i class="fas fa-lock"></i> Alterar Senha (Opcional)</label>
+                    <input type="password" name="senha_nova" placeholder="Digite a nova senha">
+                    <small style="color: #888; font-size: 0.8rem; margin-top: 5px; display: block;"><i class="fas fa-info-circle"></i> Deixe o campo em branco se desejar manter a senha atual.</small>
                 </div>
 
-                <div class="form-actions" style="margin-top: 20px;">
-                    <button type="submit" class="btn-submit" style="background-color: #3498db; color: #fff; width: 100%;">
-                        <i class="fas fa-sync-alt"></i> Atualizar Meu Perfil
-                    </button>
-                </div>
+                <button type="submit" class="btn-salvar"><i class="fas fa-save"></i> Salvar Alterações</button>
             </form>
         </div>
 
     </main>
 
-    <script>
-        function mascaraTelefone(input) {
-            let v = input.value.replace(/\D/g, ''); 
-            if (v.length > 11) v = v.substring(0, 11); 
-            if (v.length > 10) {
-                v = v.replace(/^(\d{2})(\d{5})(\d{4}).*/, '($1) $2-$3');
-            } else if (v.length > 6) {
-                v = v.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, '($1) $2-$3');
-            } else if (v.length > 2) {
-                v = v.replace(/^(\d{2})(\d{0,5})/, '($1) $2');
-            } else if (v.length > 0) {
-                v = v.replace(/^(\d*)/, '($1');
-            }
-            input.value = v;
-        }
-    </script>
 </body>
 </html>

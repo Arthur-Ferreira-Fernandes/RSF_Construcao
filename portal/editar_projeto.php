@@ -2,7 +2,7 @@
 session_start();
 require_once 'scripts/conexao.php';
 
-// 1. Trava de segurança principal (Apenas Admin ou Gestor)
+// Trava de segurança principal (Apenas Admin ou Gestor)
 if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true || $_SESSION['nivel_acesso'] !== 'admin') {
     die("<h2 style='color:#fff; text-align:center; margin-top:50px;'>Acesso Negado. Apenas administradores podem editar as informações base da obra. <a href='dashboard.php' style='color:#FFCC00;'>Voltar</a></h2>");
 }
@@ -16,15 +16,20 @@ $mensagem = '';
 $tipo_mensagem = '';
 
 // =========================================================================
-// PROCESSA A ATUALIZAÇÃO DO PROJETO
+// PROCESSA A ATUALIZAÇÃO DO PROJETO NO BANCO DE DADOS
 // =========================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nome = trim($_POST['nome']);
     $descricao = trim($_POST['descricao']);
     $endereco = trim($_POST['endereco']);
     $engenheiro_responsavel = !empty($_POST['engenheiro_responsavel']) ? $_POST['engenheiro_responsavel'] : null;
-    $cliente_id = !empty($_POST['cliente_id']) ? $_POST['cliente_id'] : null; // NOVO: Captura o cliente
+    $cliente_id = !empty($_POST['cliente_id']) ? $_POST['cliente_id'] : null;
     $data_inicio = $_POST['data_inicio'];
+    
+    // NOVOS CAMPOS CAPTURADOS DO FORMULÁRIO:
+    $data_fim_prevista = !empty($_POST['data_fim_prevista']) ? $_POST['data_fim_prevista'] : null;
+    $frequencia_medicao = $_POST['frequencia_medicao'] ?? 'Semanal';
+    
     $status = $_POST['status'];
 
     $valor_post = $_POST['valor'] ?? '0';
@@ -37,11 +42,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tipo_mensagem = "erro";
     } else {
         try {
-            // NOVO: A instrução UPDATE agora inclui o cliente_id
+            // A INSTRUÇÃO SQL CORRIGIDA: Agora inclui data_fim_prevista e frequencia_medicao
             $sql = "UPDATE projetos 
                     SET nome = :nome, descricao = :descricao, endereco = :endereco, 
                         engenheiro_responsavel = :engenheiro_responsavel, cliente_id = :cliente_id, 
-                        data_inicio = :data_inicio, valor = :valor, status = :status 
+                        data_inicio = :data_inicio, data_fim_prevista = :data_fim_prevista, 
+                        frequencia_medicao = :frequencia_medicao, valor = :valor, status = :status 
                     WHERE id = :id";
             $stmt = $pdo->prepare($sql);
             
@@ -52,6 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':engenheiro_responsavel' => $engenheiro_responsavel,
                 ':cliente_id' => $cliente_id,
                 ':data_inicio' => $data_inicio,
+                ':data_fim_prevista' => $data_fim_prevista,
+                ':frequencia_medicao' => $frequencia_medicao,
                 ':valor' => $valor,
                 ':status' => $status,
                 ':id' => $id_projeto
@@ -85,11 +93,9 @@ try {
 // =========================================================================
 // CARREGA LISTAS PARA OS DROPDOWNS (SELECTS)
 // =========================================================================
-// 1. Busca os engenheiros ativos
 $stmt_eng = $pdo->query("SELECT id, nome FROM usuarios WHERE status = 'Ativo' ORDER BY nome ASC");
 $engenheiros = $stmt_eng->fetchAll();
 
-// 2. Busca os clientes ativos
 $stmt_cli = $pdo->query("SELECT id, nome FROM clientes WHERE status = 'Ativo' ORDER BY nome ASC");
 $clientes = $stmt_cli->fetchAll();
 
@@ -122,7 +128,7 @@ $valor_formatado = number_format($projeto['valor'], 2, ',', '.');
         <div class="form-card" style="max-width: 800px; margin: 0 auto;">
             <h2><i class="fas fa-edit"></i> Editar Dados da Obra</h2>
             <p style="color: #aaa; font-size: 0.9rem; margin-top: -15px; margin-bottom: 25px;">
-                Atualize o valor orçado, o status ou vincule novos responsáveis.
+                Adicione a data de previsão de término para que o sistema gere as metas automaticamente.
             </p>
             
             <form method="POST" action="editar_projeto.php?id=<?= $id_projeto ?>">
@@ -138,7 +144,7 @@ $valor_formatado = number_format($projeto['valor'], 2, ',', '.');
 
                     <div class="form-group full-width">
                         <label for="descricao">Escopo / Descrição Técnica</label>
-                        <textarea id="descricao" name="descricao" rows="3" placeholder="Descreva o que será feito na obra..."><?= htmlspecialchars($projeto['descricao']) ?></textarea>
+                        <textarea id="descricao" name="descricao" rows="3"><?= htmlspecialchars($projeto['descricao']) ?></textarea>
                     </div>
 
                     <div class="form-group">
@@ -188,6 +194,26 @@ $valor_formatado = number_format($projeto['valor'], 2, ',', '.');
                     </div>
 
                     <div class="form-group">
+                        <label for="data_fim_prevista">Previsão de Término</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-flag-checkered"></i>
+                            <input type="date" id="data_fim_prevista" name="data_fim_prevista" value="<?= htmlspecialchars($projeto['data_fim_prevista'] ?? '') ?>">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="frequencia_medicao">Frequência das Metas</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-ruler-combined" style="z-index: 1;"></i>
+                            <select id="frequencia_medicao" name="frequencia_medicao" style="padding-left: 40px; width: 100%;">
+                                <option value="Semanal" <?= ($projeto['frequencia_medicao'] == 'Semanal') ? 'selected' : '' ?>>Semanal</option>
+                                <option value="Diária" <?= ($projeto['frequencia_medicao'] == 'Diária') ? 'selected' : '' ?>>Diária</option>
+                                <option value="Mensal" <?= ($projeto['frequencia_medicao'] == 'Mensal') ? 'selected' : '' ?>>Mensal</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
                         <label for="status">Status da Obra *</label>
                         <div class="input-icon-wrapper">
                             <i class="fas fa-info-circle" style="z-index: 1;"></i>
@@ -206,7 +232,6 @@ $valor_formatado = number_format($projeto['valor'], 2, ',', '.');
                             <i class="fas fa-dollar-sign"></i>
                             <input type="text" id="valor" name="valor" value="<?= $valor_formatado ?>" onkeyup="mascaraMoeda(this)">
                         </div>
-                        <small style="color: #888; margin-top: 5px;"><i class="fas fa-exclamation-triangle"></i> Alterar o valor orçado recalculará a porcentagem da barra de progresso no painel da obra.</small>
                     </div>
 
                 </div>

@@ -8,6 +8,11 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
     exit;
 }
 
+if ($_SESSION['nivel_acesso'] === 'cliente') {
+    header("Location: lista_projetos.php");
+    exit;
+}
+
 // =========================================================================
 // INTELIGÊNCIA DE DADOS (ANALYTICS GLOBAL)
 // =========================================================================
@@ -76,7 +81,7 @@ try {
         
         <div class="boas-vindas">
             <h1>Visão Geral da Operação</h1>
-            <p>Bem-vindo ao painel central, <strong><?= htmlspecialchars($_SESSION['usuario_nome']) ?></strong>.</p>
+            <p>Bem-vindo ao painel central, <?= htmlspecialchars($_SESSION['nome_usuario'] ?? 'Gestor') ?></strong>.</p>
         </div>
 
         <h2 class="secao-titulo"><i class="fas fa-wallet" style="color: #2ecc71;"></i> Fluxo de Caixa Consolidado</h2>
