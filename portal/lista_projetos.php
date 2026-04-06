@@ -107,6 +107,38 @@ function getStatusClass($status) {
     <link rel="stylesheet" href="../styles/lista_projetos.css">
     <link rel="icon" type="image/png" href="../img/logo.png">
 
+    <style>
+        /* PROTEÇÃO DA LISTA DE PROJETOS */
+        
+        /* 1. Impede a quebra de linha na etiqueta de status e nos botões */
+        td .badge-status, 
+        td .btn-abrir, 
+        td .btn, 
+        td a, 
+        td button,
+        .card-projeto .badge-status,
+        .card-projeto .btn-abrir {
+            white-space: nowrap !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 5px !important;
+        }
+
+        /* 2. Diz à tabela para não esmagar a coluna de ações e status */
+        th.coluna-status, td.coluna-status,
+        th.coluna-acoes, td.coluna-acoes,
+        th:last-child, td:last-child {
+            white-space: nowrap !important;
+            width: 1% !important; /* Força a coluna a ter o tamanho exato do botão, nem mais nem menos */
+        }
+
+        /* 3. Dá espaço ao título para ele poder crescer sem destruir o resto */
+        td:first-child, .projeto-nome {
+            word-break: break-word !important;
+            min-width: 250px;
+        }
+    </style>
+
 </head>
 <body>
 

@@ -2,12 +2,8 @@
 session_start();
 require_once 'scripts/conexao.php';
 
-// =========================================================================
-// 1. TRAVA DE SEGURANÇA BÁSICA E BLOQUEIO DE AÇÕES PARA CLIENTES
-// =========================================================================
+// 1. TRAVA DE SEGURANÇA E BLOQUEIO DE AÇÕES PARA CLIENTES
 if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) { header("Location: login.php"); exit; }
-
-// Se for cliente e tentar enviar qualquer formulário de edição/exclusão (POST), bloqueia!
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_SESSION['nivel_acesso'] === 'cliente') {
     die("Acesso negado. Clientes têm permissão apenas para visualização.");
 }
@@ -18,15 +14,109 @@ if (!$id_projeto) { die("<h2 style='color:#fff; text-align:center; margin-top:50
 $mensagem = ''; $tipo_mensagem = '';
 
 // =========================================================================
-// 2. LÓGICAS DE AÇÃO (EXCLUSÃO DE PROJETO E ARQUIVOS)
+// 2. LÓGICAS DE AÇÃO (EXCLUSÕES E FINANCEIRO AVULSO)
 // =========================================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'excluir_projeto') {
-    if ($_SESSION['nivel_acesso'] === 'admin') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
+    if ($_POST['acao'] === 'excluir_projeto' && $_SESSION['nivel_acesso'] === 'admin') {
         $stmt_arq_del = $pdo->prepare("SELECT nome_seguro FROM arquivos WHERE projeto = (SELECT nome FROM projetos WHERE id = :id)");
         $stmt_arq_del->execute([':id' => $id_projeto]);
         foreach ($stmt_arq_del->fetchAll() as $arq) { if (file_exists('uploads/' . $arq['nome_seguro'])) unlink('uploads/' . $arq['nome_seguro']); }
         $pdo->prepare("DELETE FROM projetos WHERE id = :id")->execute([':id' => $id_projeto]);
         header("Location: lista_projetos.php?msg=projeto_excluido"); exit;
+    }
+    if ($_POST['acao'] === 'adicionar_despesa') {
+        $valor_despesa = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_despesa'] ?? '0');
+        if (!empty($_POST['descricao_despesa']) && $valor_despesa > 0) {
+            $pdo->prepare("INSERT INTO despesas (projeto_id, descricao, valor, data_despesa, usuario_id) VALUES (?, ?, ?, ?, ?)")->execute([$id_projeto, trim($_POST['descricao_despesa']), $valor_despesa, $_POST['data_despesa'], $_SESSION['usuario_id']]);
+            $mensagem = "Gasto lançado!"; $tipo_mensagem = "sucesso";
+        }
+    }
+    if ($_POST['acao'] === 'arquivar_despesa') {
+        $pdo->prepare("UPDATE despesas SET status = 'Arquivado' WHERE id = ?")->execute([$_POST['id_despesa']]);
+    }
+    if ($_POST['acao'] === 'editar_despesa') {
+        $valor_edit = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_edit'] ?? '0');
+        $pdo->prepare("UPDATE despesas SET descricao = ?, valor = ?, data_despesa = ? WHERE id = ?")->execute([trim($_POST['descricao_edit']), $valor_edit, $_POST['data_despesa_edit'], $_POST['id_despesa']]);
+    }
+    if ($_POST['acao'] === 'adicionar_recebimento') {
+        $valor_rec = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_rec'] ?? '0');
+        if (!empty($_POST['descricao_rec']) && $valor_rec > 0) {
+            $pdo->prepare("INSERT INTO recebimentos (projeto_id, descricao, valor, data_pagamento, usuario_id) VALUES (?, ?, ?, ?, ?)")->execute([$id_projeto, trim($_POST['descricao_rec']), $valor_rec, $_POST['data_rec'], $_SESSION['usuario_id']]);
+            $mensagem = "Pagamento avulso registrado!"; $tipo_mensagem = "sucesso";
+        }
+    }
+    if ($_POST['acao'] === 'arquivar_recebimento') {
+        $pdo->prepare("UPDATE recebimentos SET status = 'Arquivado' WHERE id = ?")->execute([$_POST['id_recebimento']]);
+        $mensagem = "Recebimento arquivado com sucesso."; $tipo_mensagem = "sucesso";
+    }
+    if ($_POST['acao'] === 'editar_recebimento') {
+        $valor_edit = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_rec_edit'] ?? '0');
+        $pdo->prepare("UPDATE recebimentos SET descricao = ?, valor = ?, data_pagamento = ? WHERE id = ?")->execute([trim($_POST['descricao_rec_edit']), $valor_edit, $_POST['data_rec_edit'], $_POST['id_recebimento']]);
+        $mensagem = "Recebimento corrigido!"; $tipo_mensagem = "sucesso";
+    }
+
+    // =========================================================================
+    // NOVO: SALVAR PROGRESSO DAS TAREFAS (Sem fechar a etapa)
+    // =========================================================================
+    if ($_POST['acao'] === 'atualizar_progresso') {
+        $id_acomp = filter_input(INPUT_POST, 'acompanhamento_id', FILTER_VALIDATE_INT);
+        $itens_marcados = $_POST['itens_concluidos'] ?? [];
+        $datas_realizadas = $_POST['datas_realizadas'] ?? []; 
+
+        if ($id_acomp) {
+            // Zera todos os itens primeiro
+            $pdo->prepare("UPDATE acompanhamento_itens SET concluido = 0, data_realizada = NULL WHERE acompanhamento_id = ?")->execute([$id_acomp]);
+            
+            // Marca apenas os que o usuário deixou "checkados" e salva a data real
+            if (!empty($itens_marcados)) {
+                $stmt_update_item = $pdo->prepare("UPDATE acompanhamento_itens SET concluido = 1, data_realizada = ? WHERE id = ?");
+                foreach ($itens_marcados as $id_item) {
+                    $data_real = !empty($datas_realizadas[$id_item]) ? $datas_realizadas[$id_item] : date('Y-m-d');
+                    $stmt_update_item->execute([$data_real, $id_item]);
+                }
+            }
+            $mensagem = "Progresso das tarefas atualizado!"; $tipo_mensagem = "sucesso";
+        }
+    }
+
+    // =========================================================================
+    // FECHAR A ETAPA (Agora só lida com o relatório e o pagamento)
+    // =========================================================================
+    if ($_POST['acao'] === 'receber_e_concluir_semana') {
+        $valor_rec = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_rec'] ?? '0');
+        $relato_semana = trim($_POST['relato_semana']);
+        $id_acomp = filter_input(INPUT_POST, 'acompanhamento_id', FILTER_VALIDATE_INT);
+
+        if ($id_acomp) {
+            if ($valor_rec > 0) {
+                $pdo->prepare("INSERT INTO recebimentos (projeto_id, descricao, valor, data_pagamento, usuario_id) VALUES (?, ?, ?, ?, ?)")->execute([$id_projeto, trim($_POST['descricao_rec']), $valor_rec, $_POST['data_rec'], $_SESSION['usuario_id']]);
+            }
+            // Marca a etapa como concluída
+            $pdo->prepare("UPDATE acompanhamento_semanal SET diario_obra = ?, status = 'Concluído' WHERE id = ?")->execute([$relato_semana, $id_acomp]);
+            
+            $mensagem = "Etapa 100% finalizada com sucesso!"; $tipo_mensagem = "sucesso";
+        }
+    }
+
+    // =========================================================================
+    // DESFAZER FECHAMENTO
+    // =========================================================================
+    if ($_POST['acao'] === 'desfazer_semana' && $_SESSION['nivel_acesso'] === 'admin') {
+        $id_acomp = filter_input(INPUT_POST, 'acompanhamento_id', FILTER_VALIDATE_INT);
+        if ($id_acomp) {
+            $stmt_titulo = $pdo->prepare("SELECT titulo_semana FROM acompanhamento_semanal WHERE id = ?");
+            $stmt_titulo->execute([$id_acomp]);
+            $semana = $stmt_titulo->fetch();
+
+            // Reabre a etapa mas NÃO apaga as tarefas já concluídas (mantém o progresso salvo)
+            $pdo->prepare("UPDATE acompanhamento_semanal SET status = 'Pendente', diario_obra = NULL WHERE id = ?")->execute([$id_acomp]);
+            
+            if ($semana) {
+                $descricao_pagamento = 'Medição - ' . $semana['titulo_semana'];
+                $pdo->prepare("UPDATE recebimentos SET status = 'Arquivado' WHERE projeto_id = ? AND descricao = ? AND status = 'Ativo'")->execute([$id_projeto, $descricao_pagamento]);
+            }
+            $mensagem = "Fechamento desfeito! O progresso da checklist foi mantido e o caixa corrigido."; $tipo_mensagem = "sucesso";
+        }
     }
 }
 
@@ -42,124 +132,18 @@ if (isset($_GET['excluir_arquivo']) && $_SESSION['nivel_acesso'] !== 'cliente') 
 }
 
 // =========================================================================
-// 3. LÓGICAS DE AÇÃO FINANCEIRA (DESPESAS E RECEBIMENTOS)
-// =========================================================================
-// --- DESPESAS ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'adicionar_despesa') {
-    $valor_despesa = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_despesa'] ?? '0');
-    if (!empty($_POST['descricao_despesa']) && $valor_despesa > 0) {
-        $pdo->prepare("INSERT INTO despesas (projeto_id, descricao, valor, data_despesa, usuario_id) VALUES (?, ?, ?, ?, ?)")
-            ->execute([$id_projeto, trim($_POST['descricao_despesa']), $valor_despesa, $_POST['data_despesa'], $_SESSION['usuario_id']]);
-        $mensagem = "Gasto lançado!"; $tipo_mensagem = "sucesso";
-    }
-}
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'arquivar_despesa') {
-    $pdo->prepare("UPDATE despesas SET status = 'Arquivado' WHERE id = ?")->execute([$_POST['id_despesa']]);
-}
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'editar_despesa') {
-    $valor_edit = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_edit'] ?? '0');
-    $pdo->prepare("UPDATE despesas SET descricao = ?, valor = ?, data_despesa = ? WHERE id = ?")->execute([trim($_POST['descricao_edit']), $valor_edit, $_POST['data_despesa_edit'], $_POST['id_despesa']]);
-}
-
-// --- RECEBIMENTOS AVULSOS ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'adicionar_recebimento') {
-    $valor_rec = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_rec'] ?? '0');
-    if (!empty($_POST['descricao_rec']) && $valor_rec > 0) {
-        $pdo->prepare("INSERT INTO recebimentos (projeto_id, descricao, valor, data_pagamento, usuario_id) VALUES (?, ?, ?, ?, ?)")
-            ->execute([$id_projeto, trim($_POST['descricao_rec']), $valor_rec, $_POST['data_rec'], $_SESSION['usuario_id']]);
-        $mensagem = "Pagamento avulso registrado!"; $tipo_mensagem = "sucesso";
-    }
-}
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'arquivar_recebimento') {
-    $pdo->prepare("UPDATE recebimentos SET status = 'Arquivado' WHERE id = ?")->execute([$_POST['id_recebimento']]);
-    $mensagem = "Recebimento arquivado com sucesso. O valor foi removido do caixa."; $tipo_mensagem = "sucesso";
-}
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'editar_recebimento') {
-    $valor_edit = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_rec_edit'] ?? '0');
-    $pdo->prepare("UPDATE recebimentos SET descricao = ?, valor = ?, data_pagamento = ? WHERE id = ?")->execute([trim($_POST['descricao_rec_edit']), $valor_edit, $_POST['data_rec_edit'], $_POST['id_recebimento']]);
-    $mensagem = "Recebimento corrigido!"; $tipo_mensagem = "sucesso";
-}
-
-// =========================================================================
-// 4. LÓGICA: RECEBER PARCELA E CONCLUIR SEMANA (COM CHECKLIST)
-// =========================================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'receber_e_concluir_semana') {
-    $valor_rec = (float) str_replace(['.', ','], ['', '.'], $_POST['valor_rec'] ?? '0');
-    $relato_semana = trim($_POST['relato_semana']);
-    $id_acomp = filter_input(INPUT_POST, 'acompanhamento_id', FILTER_VALIDATE_INT);
-    $itens_marcados = $_POST['itens_concluidos'] ?? [];
-
-    if ($valor_rec >= 0 && $id_acomp) {
-        if ($valor_rec > 0) {
-            $pdo->prepare("INSERT INTO recebimentos (projeto_id, descricao, valor, data_pagamento, usuario_id) VALUES (?, ?, ?, ?, ?)")
-                ->execute([$id_projeto, trim($_POST['descricao_rec']), $valor_rec, $_POST['data_rec'], $_SESSION['usuario_id']]);
-        }
-
-        $pdo->prepare("UPDATE acompanhamento_semanal SET diario_obra = ?, status = 'Concluído' WHERE id = ?")
-            ->execute([$relato_semana, $id_acomp]);
-
-        // Reseta todas as tarefas e marca apenas as enviadas
-        $pdo->prepare("UPDATE acompanhamento_itens SET concluido = 0 WHERE acompanhamento_id = ?")->execute([$id_acomp]);
-        if (!empty($itens_marcados)) {
-            $in = str_repeat('?,', count($itens_marcados) - 1) . '?';
-            $pdo->prepare("UPDATE acompanhamento_itens SET concluido = 1 WHERE id IN ($in)")->execute($itens_marcados);
-        }
-
-        $mensagem = "Etapa concluída e checklist salva!"; $tipo_mensagem = "sucesso";
-    }
-}
-
-// =========================================================================
-// LÓGICA PARA REABRIR A SEMANA E LIMPAR O CAIXA (DESFAZER FECHAMENTO)
-// =========================================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'desfazer_semana') {
-    if ($_SESSION['nivel_acesso'] === 'admin') {
-        $id_acomp = filter_input(INPUT_POST, 'acompanhamento_id', FILTER_VALIDATE_INT);
-        
-        if ($id_acomp) {
-            // 1. Descobre qual era o título da semana para localizar o pagamento no caixa
-            $stmt_titulo = $pdo->prepare("SELECT titulo_semana FROM acompanhamento_semanal WHERE id = ?");
-            $stmt_titulo->execute([$id_acomp]);
-            $semana = $stmt_titulo->fetch();
-
-            // 2. Reabre a etapa e limpa o relato da engenharia
-            $pdo->prepare("UPDATE acompanhamento_semanal SET status = 'Pendente', diario_obra = NULL WHERE id = ?")->execute([$id_acomp]);
-            
-            // 3. Desmarca todas as caixinhas da checklist
-            $pdo->prepare("UPDATE acompanhamento_itens SET concluido = 0 WHERE acompanhamento_id = ?")->execute([$id_acomp]);
-            
-            // 4. MÁGICA: Procura o pagamento exato dessa semana no caixa e arquiva automaticamente
-            if ($semana) {
-                $descricao_pagamento = 'Medição - ' . $semana['titulo_semana'];
-                $pdo->prepare("UPDATE recebimentos SET status = 'Arquivado' WHERE projeto_id = ? AND descricao = ? AND status = 'Ativo'")
-                    ->execute([$id_projeto, $descricao_pagamento]);
-            }
-
-            $mensagem = "Etapa reaberta e o valor financeiro foi removido do caixa automaticamente!"; 
-            $tipo_mensagem = "sucesso";
-        }
-    }
-}
-
-// =========================================================================
-// 5. CARREGAMENTO GERAL DE DADOS (CÁLCULOS)
+// CARREGAMENTO GERAL DE DADOS
 // =========================================================================
 try {
-    // PROTEÇÃO: Se for cliente, garante que a obra pertence a ele
     $sql_projeto = "SELECT p.*, u.nome AS engenheiro_nome, u.telefone AS engenheiro_telefone, c.nome AS cliente_nome, c.telefone AS cliente_telefone FROM projetos p LEFT JOIN usuarios u ON p.engenheiro_responsavel = u.id LEFT JOIN clientes c ON p.cliente_id = c.id WHERE p.id = :id";
-    if ($_SESSION['nivel_acesso'] === 'cliente') {
-        $sql_projeto .= " AND p.cliente_id = :cliente_id";
-    }
+    if ($_SESSION['nivel_acesso'] === 'cliente') { $sql_projeto .= " AND p.cliente_id = :cliente_id"; }
     $sql_projeto .= " LIMIT 1";
 
     $stmt = $pdo->prepare($sql_projeto);
     $params = [':id' => $id_projeto];
-    if ($_SESSION['nivel_acesso'] === 'cliente') {
-        $params[':cliente_id'] = $_SESSION['usuario_id'];
-    }
+    if ($_SESSION['nivel_acesso'] === 'cliente') { $params[':cliente_id'] = $_SESSION['usuario_id']; }
     $stmt->execute($params);
     $projeto = $stmt->fetch();
-    
     if (!$projeto) { die("<h2 style='color:#fff; text-align:center; margin-top:50px;'>Obra não localizada ou acesso negado.</h2>"); }
 
     $stmt_arq = $pdo->prepare("SELECT a.*, u.nome AS enviado_por FROM arquivos a JOIN usuarios u ON a.usuario_id = u.id WHERE a.projeto = :nome_projeto ORDER BY a.data_envio DESC");
@@ -174,31 +158,24 @@ try {
     $stmt_rec->execute([':id' => $id_projeto]);
     $recebimentos = $stmt_rec->fetchAll();
 
-    // Cálculos Globais
     $total_orcado = (float) $projeto['valor'];
     $total_recebido = array_sum(array_column($recebimentos, 'valor'));
     $total_gasto = array_sum(array_column($despesas, 'valor'));
-    $saldo_em_caixa = $total_recebido - $total_gasto;
     
-    $porcentagem_recebida = $total_orcado > 0 ? ($total_recebido / $total_orcado) * 100 : 0;
-    $largura_barra_rec = min($porcentagem_recebida, 100);
-    
+    $largura_barra_rec = min(($total_orcado > 0 ? ($total_recebido / $total_orcado) * 100 : 0), 100);
     $porcentagem_gasta = $total_orcado > 0 ? ($total_gasto / $total_orcado) * 100 : 0;
     $largura_barra_gasto = min($porcentagem_gasta, 100);
     $cor_barra_gasto = ($porcentagem_gasta >= 95) ? 'progresso-perigo' : (($porcentagem_gasta >= 75) ? 'progresso-alerta' : 'progresso-seguro');
 
-    // Motor de Planejamento (Base de Dados)
     $periodos_gerados = [];
-    $orcamento_por_periodo = 0;
-
-    $stmt_plan = $pdo->prepare("SELECT * FROM acompanhamento_semanal WHERE projeto_id = :id ORDER BY data_inicio ASC");
+    $stmt_plan = $pdo->prepare("SELECT * FROM acompanhamento_semanal WHERE projeto_id = :id ORDER BY ordem ASC, data_inicio ASC");
     $stmt_plan->execute([':id' => $id_projeto]);
     $periodos_bd = $stmt_plan->fetchAll();
 
     if (count($periodos_bd) > 0) {
-        $orcamento_por_periodo = $total_orcado / count($periodos_bd);
-
         foreach ($periodos_bd as $per) {
+            $orcamento_semana = (float) $per['valor_orcado'];
+
             $stmt_g = $pdo->prepare("SELECT SUM(valor) as total FROM despesas WHERE projeto_id = :id AND status = 'Ativo' AND data_despesa BETWEEN :ini AND :fim");
             $stmt_g->execute([':id' => $id_projeto, ':ini' => $per['data_inicio'], ':fim' => $per['data_fim']]);
             $gasto_real = $stmt_g->fetch()['total'] ?? 0;
@@ -207,7 +184,7 @@ try {
             $stmt_r->execute([':id' => $id_projeto, ':ini' => $per['data_inicio'], ':fim' => $per['data_fim']]);
             $recebido_real = $stmt_r->fetch()['total'] ?? 0;
 
-            $stmt_itens = $pdo->prepare("SELECT id, descricao, concluido FROM acompanhamento_itens WHERE acompanhamento_id = ?");
+            $stmt_itens = $pdo->prepare("SELECT * FROM acompanhamento_itens WHERE acompanhamento_id = ? ORDER BY id ASC");
             $stmt_itens->execute([$per['id']]);
             $itens = $stmt_itens->fetchAll();
 
@@ -216,6 +193,7 @@ try {
                 'titulo' => $per['titulo_semana'],
                 'inicio' => $per['data_inicio'],
                 'fim' => $per['data_fim'],
+                'orcamento_semana' => $orcamento_semana,
                 'itens' => $itens,
                 'gasto_real' => $gasto_real,
                 'recebido_real' => $recebido_real,
@@ -243,7 +221,6 @@ function getStatusClass($status) {
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../styles/detalhes.css">
-    <link rel="icon" type="image/png" href="../img/logo.png">
 </head>
 <body>
 
@@ -264,12 +241,10 @@ function getStatusClass($status) {
             <?php if (isset($_SESSION['nivel_acesso']) && $_SESSION['nivel_acesso'] === 'admin'): ?>
                 <div class="acoes-projeto" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                     <a href="editar_projeto.php?id=<?= $projeto['id'] ?>" class="btn-editar"><i class="fas fa-edit"></i> Editar Obra</a>
-                    <a href="planejamento_cronograma.php?id=<?= $projeto['id'] ?>" class="btn-editar" style="background-color: #3498db; color: #fff;"><i class="fas fa-sitemap"></i> Refazer Metas</a>
+                    <a href="planejamento_cronograma.php?id=<?= $projeto['id'] ?>" class="btn-editar" style="background-color: #3498db; color: #fff;"><i class="fas fa-sitemap"></i> Planejar Metas</a>
                     <form method="POST" action="detalhes_projeto.php?id=<?= $id_projeto ?>" style="margin: 0;">
                         <input type="hidden" name="acao" value="excluir_projeto">
-                        <button type="submit" class="btn-excluir-obra" onclick="return confirm('ATENÇÃO: Deseja realmente excluir esta obra e todos os seus dados? Esta ação é irreversível!');">
-                            <i class="fas fa-trash-alt"></i> Excluir Obra
-                        </button>
+                        <button type="submit" class="btn-excluir-obra" onclick="return confirm('ATENÇÃO: Deseja excluir esta obra?');"><i class="fas fa-trash-alt"></i> Excluir</button>
                     </form>
                 </div>
             <?php endif; ?>
@@ -285,7 +260,7 @@ function getStatusClass($status) {
                 <p><?= htmlspecialchars($projeto['engenheiro_nome'] ?? 'Não Atribuído') ?></p>
             </div>
             <div class="info-card">
-                <h3><i class="fas fa-calendar-alt"></i> Prazos</h3>
+                <h3><i class="fas fa-calendar-alt"></i> Prazos Globais</h3>
                 <p>Início: <?= date('d/m/Y', strtotime($projeto['data_inicio'])) ?></p>
                 <p class="sub-info">Prev. Fim: <?= !empty($projeto['data_fim_prevista']) ? date('d/m/Y', strtotime($projeto['data_fim_prevista'])) : '--' ?></p>
             </div>
@@ -294,7 +269,7 @@ function getStatusClass($status) {
         <div style="display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap;">
             <div style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 20px; border-radius: 8px; border-top: 3px solid #3498db; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                    <strong style="color: #3498db;"><i class="fas fa-arrow-up"></i> Valor Pago na Obra</strong>
+                    <strong style="color: #3498db;"><i class="fas fa-arrow-up"></i> Recebido do Cliente</strong>
                     <strong style="color: #fff;">R$ <?= number_format($total_recebido, 2, ',', '.') ?></strong>
                 </div>
                 <div class="progress-container" style="height: 12px; margin-bottom: 5px;"><div class="progress-bar progresso-azul" style="width: <?= $largura_barra_rec ?>%;"></div></div>
@@ -304,25 +279,18 @@ function getStatusClass($status) {
             <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
             <div style="flex: 1; min-width: 300px; background: #1a1a1a; padding: 20px; border-radius: 8px; border-top: 3px solid #e74c3c; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                    <strong style="color: #e74c3c;"><i class="fas fa-arrow-down"></i> Custo da Obra</strong>
+                    <strong style="color: #e74c3c;"><i class="fas fa-arrow-down"></i> Gasto da Obra</strong>
                     <strong style="color: #fff;">R$ <?= number_format($total_gasto, 2, ',', '.') ?></strong>
                 </div>
                 <div class="progress-container" style="height: 12px; margin-bottom: 5px;"><div class="progress-bar <?= $cor_barra_gasto ?>" style="width: <?= $largura_barra_gasto ?>%;"></div></div>
-                <span style="font-size: 0.8rem; color: #888;">Orçamento: R$ <?= number_format($total_orcado, 2, ',', '.') ?></span>
+                <span style="font-size: 0.8rem; color: #888;">Orçamento Previsto: R$ <?= number_format($total_orcado, 2, ',', '.') ?></span>
             </div>
             <?php endif; ?>
         </div>
 
         <div class="secao-arquivos" style="margin-bottom: 50px;">
             <div class="header-acoes" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2><i class="fas fa-tasks" style="color: #f1c40f;"></i> Diário da Obra (<?= htmlspecialchars($projeto['frequencia_medicao'] ?? 'Semanal') ?>)</h2>
-                
-                <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
-                <div style="background: #222; padding: 10px 20px; border-radius: 4px; border: 1px solid #444;">
-                    <span style="color: #aaa; font-size: 0.85rem; text-transform: uppercase;">Meta de Pagamento por Semana</span>
-                    <strong style="display: block; color: #f1c40f; font-size: 1.2rem;">R$ <?= number_format($orcamento_por_periodo, 2, ',', '.') ?></strong>
-                </div>
-                <?php endif; ?>
+                <h2><i class="fas fa-tasks" style="color: #f1c40f;"></i> Diário da Obra</h2>
             </div>
 
             <div class="semanas-grid">
@@ -331,35 +299,66 @@ function getStatusClass($status) {
                 <?php else: ?>
                     <?php foreach ($periodos_gerados as $p): 
                         $concluido = ($p['status'] === 'Concluído');
-                        $estourou_orcamento = ($p['gasto_real'] > $orcamento_por_periodo);
-                        // Para o cliente, não mostramos vermelho de "estourou orçamento"
-                        if ($_SESSION['nivel_acesso'] === 'cliente') {
-                            $cor_borda = $concluido ? '#2ecc71' : '#f1c40f';
-                        } else {
-                            $cor_borda = $concluido ? '#2ecc71' : ($estourou_orcamento ? '#e74c3c' : '#f1c40f');
-                        }
+                        $estourou_orcamento = ($p['gasto_real'] > $p['orcamento_semana']);
+                        $cor_borda = $concluido ? '#2ecc71' : (($_SESSION['nivel_acesso'] !== 'cliente' && $estourou_orcamento) ? '#e74c3c' : '#f1c40f');
+                        
+                        // CONTAGEM DE TAREFAS E VERIFICAÇÃO PARA O BOTÃO
+                        $total_itens = count($p['itens']);
+                        $itens_concluidos = 0;
+                        foreach($p['itens'] as $it) { if($it['concluido'] == 1) $itens_concluidos++; }
+                        
+                        // A etapa só está "Pronta para Fechar" se não houver tarefas ou se todas estiverem marcadas
+                        $tudo_concluido_para_fechar = ($total_itens == 0 || $total_itens == $itens_concluidos);
                     ?>
                         <div class="card-semana" style="border-left-color: <?= $cor_borda ?>; opacity: <?= $concluido ? '0.85' : '1' ?>;">
-                            <div class="semana-header">
-                                <div>
+                            <div class="semana-header" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+                                <div style="display: flex; justify-content: space-between; width: 100%;">
                                     <h3 style="color: <?= $cor_borda ?>"><?= $p['titulo'] ?></h3>
-                                    <span class="semana-data"><?= date('d/m', strtotime($p['inicio'])) ?> até <?= date('d/m/Y', strtotime($p['fim'])) ?></span>
+                                    <?php if ($concluido): ?>
+                                        <span class="badge-status status-concluido" style="font-size: 0.7rem;"><i class="fas fa-check"></i> Concluído</span>
+                                    <?php else: ?>
+                                        <span class="badge-status status-andamento" style="font-size: 0.7rem; background-color: #333; color: #aaa; border: none;">Pendente</span>
+                                    <?php endif; ?>
                                 </div>
-                                <?php if ($concluido): ?>
-                                    <span class="badge-status status-concluido" style="font-size: 0.7rem;"><i class="fas fa-check"></i> Concluído</span>
-                                <?php else: ?>
-                                    <span class="badge-status status-andamento" style="font-size: 0.7rem; background-color: #333; color: #aaa; border: none;">Pendente</span>
-                                <?php endif; ?>
+                                <span class="semana-data" style="margin-top: -5px;"><?= date('d/m', strtotime($p['inicio'])) ?> até <?= date('d/m/Y', strtotime($p['fim'])) ?></span>
                             </div>
 
+                            <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px; border-radius: 4px; margin-bottom: 15px; border-left: 3px solid <?= $cor_borda ?>;">
+                                <span style="color: #aaa; font-size: 0.8rem; text-transform: uppercase; font-weight: bold;">Orçamento Planejado</span>
+                                <strong style="color: <?= $cor_borda ?>; font-size: 1.1rem;">R$ <?= number_format($p['orcamento_semana'], 2, ',', '.') ?></strong>
+                            </div>
+                            <?php endif; ?>
+
                             <div style="margin-bottom: 15px; padding: 10px; background-color: rgba(241, 196, 15, 0.05); border-left: 3px solid <?= $cor_borda ?>; border-radius: 4px;">
-                                <strong style="display: block; color: <?= $cor_borda ?>; font-size: 0.8rem; margin-bottom: 5px;"><i class="fas fa-tasks"></i> Tarefas da Etapa</strong>
+                                <strong style="display: block; color: <?= $cor_borda ?>; font-size: 0.8rem; margin-bottom: 5px;"><i class="fas fa-tasks"></i> Orçamento Detalhado da Etapa</strong>
                                 <ul style="list-style: none; padding-left: 0; margin-top: 5px; font-size: 0.85rem; color: #ccc;">
                                     <?php if(empty($p['itens'])): ?>
-                                        <li style="color:#888; font-style:italic;">Sem tarefas específicas...</li>
-                                    <?php else: foreach($p['itens'] as $item): ?>
-                                        <li style="margin-bottom: 6px;">
-                                            <i class="fas <?= $item['concluido'] ? 'fa-check-square' : 'fa-square' ?>" style="color: <?= $item['concluido'] ? '#2ecc71' : '#888' ?>;"></i> <?= htmlspecialchars($item['descricao']) ?>
+                                        <li style="color:#888; font-style:italic;">Sem tarefas...</li>
+                                    <?php else: foreach($p['itens'] as $item): 
+                                        $info_data = "";
+                                        $cor_badge = "#888";
+                                        if ($item['concluido'] == 1 && $item['data_realizada']) {
+                                            $data_real_txt = date('d/m/Y', strtotime($item['data_realizada']));
+                                            $atrasado = ($item['data_previsao'] && $item['data_realizada'] > $item['data_previsao']);
+                                            if ($atrasado) {
+                                                $info_data = "<i class='fas fa-exclamation-triangle'></i> Entregue: {$data_real_txt} (Atraso)";
+                                                $cor_badge = "#e74c3c";
+                                            } else {
+                                                $info_data = "<i class='fas fa-check-double'></i> Entregue: {$data_real_txt}";
+                                                $cor_badge = "#2ecc71";
+                                            }
+                                        } else {
+                                            $data_prev = $item['data_previsao'] ? date('d/m/Y', strtotime($item['data_previsao'])) : '--';
+                                            $info_data = "<i class='fas fa-calendar-day'></i> Previsto: " . $data_prev;
+                                        }
+                                    ?>
+                                        <li style="margin-bottom: 8px; display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 6px; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                            <span style="flex: 2; min-width: 200px;"><i class="fas <?= $item['concluido'] ? 'fa-check-square' : 'fa-square' ?>" style="color: <?= $item['concluido'] ? '#2ecc71' : '#888' ?>;"></i> <?= htmlspecialchars($item['descricao']) ?></span>
+                                            <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
+                                                <strong style="color: #f1c40f; font-size: 0.85rem; flex: 1; text-align: right; margin-right: 15px;">R$ <?= number_format($item['valor_orcado'], 2, ',', '.') ?></strong>
+                                            <?php endif; ?>
+                                            <span style="font-size: 0.75rem; color: <?= $cor_badge ?>; background: #222; padding: 4px 8px; border-radius: 10px; white-space: nowrap; border: 1px solid <?= $cor_badge ?>;"><?= $info_data ?></span>
                                         </li>
                                     <?php endforeach; endif; ?>
                                 </ul>
@@ -389,15 +388,25 @@ function getStatusClass($status) {
                                 $json_itens = htmlspecialchars(json_encode($p['itens']), ENT_QUOTES, 'UTF-8');
                             ?>
                                 <?php if (!$concluido): ?>
-                                    <button class="btn-receber-parcela" onclick="abrirModalReceberParcela('<?= $p['id_acomp'] ?>', '<?= $p['titulo'] ?>', '<?= $p['inicio'] ?>', '<?= $p['fim'] ?>', '<?= number_format($orcamento_por_periodo, 2, ',', '.') ?>', '<?= $json_itens ?>')">
-                                        <i class="fas fa-edit"></i> Relatar e Fechar Etapa
-                                    </button>
+                                
+                                    <?php if (!$tudo_concluido_para_fechar): ?>
+                                        <button class="btn-receber-parcela" onclick="abrirModalProgresso('<?= $p['id_acomp'] ?>', '<?= $p['titulo'] ?>', '<?= $json_itens ?>')" style="border-color: #f1c40f; color: #f1c40f;">
+                                            <i class="fas fa-tasks"></i> Atualizar Progresso (<?= $itens_concluidos ?>/<?= $total_itens ?>)
+                                        </button>
+                                        
+                                    <?php else: ?>
+                                        <button class="btn-receber-parcela" onclick="abrirModalReceberParcela('<?= $p['id_acomp'] ?>', '<?= $p['titulo'] ?>', '<?= $p['fim'] ?>', '<?= number_format($p['orcamento_semana'], 2, ',', '.') ?>')" style="border-color: #2ecc71; color: #2ecc71; background-color: rgba(46, 204, 113, 0.1);">
+                                            <i class="fas fa-check-double"></i> Relatar e Fechar Etapa
+                                        </button>
+                                        <button onclick="abrirModalProgresso('<?= $p['id_acomp'] ?>', '<?= $p['titulo'] ?>', '<?= $json_itens ?>')" style="background:transparent; border:none; color:#888; font-size:0.8rem; margin-top:10px; cursor:pointer; text-decoration:underline;">Revisar Tarefas</button>
+                                    <?php endif; ?>
+                                    
                                 <?php else: ?>
                                     <?php if ($_SESSION['nivel_acesso'] === 'admin'): ?>
                                     <form method="POST" action="detalhes_projeto.php?id=<?= $id_projeto ?>" style="margin-top: 15px;">
                                         <input type="hidden" name="acao" value="desfazer_semana">
                                         <input type="hidden" name="acompanhamento_id" value="<?= $p['id_acomp'] ?>">
-                                        <button type="submit" onclick="return confirm('Deseja reabrir esta etapa? A checklist será desmarcada e o pagamento desta semana será removido do caixa automaticamente.');" style="width: 100%; border: 1px solid #e74c3c; color: #e74c3c; background: transparent; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: center; gap: 8px; align-items: center;">
+                                        <button type="submit" onclick="return confirm('Deseja reabrir esta etapa? O relatório e o pagamento sumirão, MAS as tarefas continuarão marcadas como concluídas para você não perder o trabalho.');" style="width: 100%; border: 1px solid #e74c3c; color: #e74c3c; background: transparent; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: center; gap: 8px; align-items: center;">
                                             <i class="fas fa-undo"></i> Desfazer Fechamento
                                         </button>
                                     </form>
@@ -413,7 +422,6 @@ function getStatusClass($status) {
         <div style="display: flex; gap: 20px; flex-wrap: wrap;">
             <div class="financeiro-card card-entradas" style="flex: 1; min-width: 400px; border-top: 2px solid #3498db;">
                 <h2 style="color: #3498db; margin-top: 0; font-size: 1.2rem;"><i class="fas fa-list"></i> Histórico de Pagamentos</h2>
-                
                 <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
                 <form method="POST" action="detalhes_projeto.php?id=<?= $id_projeto ?>" style="margin-bottom: 20px; display: flex; gap: 10px;">
                     <input type="hidden" name="acao" value="adicionar_recebimento">
@@ -423,15 +431,9 @@ function getStatusClass($status) {
                     <button type="submit" class="btn-submit btn-submit-azul" style="padding: 10px 15px;"><i class="fas fa-plus"></i></button>
                 </form>
                 <?php endif; ?>
-
                 <div class="table-wrapper">
                     <table>
-                        <thead>
-                            <tr>
-                                <th>Data</th><th>Descrição</th><th>Valor</th>
-                                <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?><th style="text-align: right;">Ações</th><?php endif; ?>
-                            </tr>
-                        </thead>
+                        <thead><tr><th>Data</th><th>Descrição</th><th>Valor</th><?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?><th style="text-align: right;">Ações</th><?php endif; ?></tr></thead>
                         <tbody>
                             <?php if (empty($recebimentos)): ?>
                                 <tr><td colspan="<?= $_SESSION['nivel_acesso'] !== 'cliente' ? '4' : '3' ?>" style="text-align: center; color: #888; padding: 20px;">Nenhum pagamento efetuado.</td></tr>
@@ -443,11 +445,7 @@ function getStatusClass($status) {
                                     <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
                                     <td style="text-align: right; white-space: nowrap;">
                                         <button type="button" class="btn-editar-sm" onclick="abrirModalEditarRec(<?= $rec['id'] ?>, '<?= htmlspecialchars($rec['descricao'], ENT_QUOTES) ?>', '<?= $rec['data_pagamento'] ?>', '<?= number_format($rec['valor'], 2, ',', '.') ?>')"><i class="fas fa-edit"></i></button>
-                                        <form method="POST" style="display:inline;" action="detalhes_projeto.php?id=<?= $id_projeto ?>">
-                                            <input type="hidden" name="acao" value="arquivar_recebimento">
-                                            <input type="hidden" name="id_recebimento" value="<?= $rec['id'] ?>">
-                                            <button type="submit" class="btn-arquivar-sm" onclick="return confirm('Arquivar este recebimento?');"><i class="fas fa-archive"></i></button>
-                                        </form>
+                                        <form method="POST" style="display:inline;" action="detalhes_projeto.php?id=<?= $id_projeto ?>"><input type="hidden" name="acao" value="arquivar_recebimento"><input type="hidden" name="id_recebimento" value="<?= $rec['id'] ?>"><button type="submit" class="btn-arquivar-sm" onclick="return confirm('Arquivar este recebimento?');"><i class="fas fa-archive"></i></button></form>
                                     </td>
                                     <?php endif; ?>
                                 </tr>
@@ -462,16 +460,10 @@ function getStatusClass($status) {
                 <h2 style="color: #e74c3c; margin-top: 0; font-size: 1.2rem;"><i class="fas fa-file-invoice-dollar"></i> Lançar Despesa (Notas)</h2>
                 <form method="POST" action="detalhes_projeto.php?id=<?= $id_projeto ?>">
                     <input type="hidden" name="acao" value="adicionar_despesa">
-                    <div class="form-group" style="margin-bottom: 10px;">
-                        <input type="text" name="descricao_despesa" placeholder="Descrição (Ex: Cimento)" required style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="date" name="data_despesa" value="<?= date('Y-m-d') ?>" required style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
-                        <input type="text" name="valor_despesa" placeholder="R$ 0,00" onkeyup="mascaraMoeda(this)" required style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
-                    </div>
+                    <div class="form-group" style="margin-bottom: 10px;"><input type="text" name="descricao_despesa" placeholder="Descrição (Ex: Cimento)" required style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;"></div>
+                    <div style="display: flex; gap: 10px;"><input type="date" name="data_despesa" value="<?= date('Y-m-d') ?>" required style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;"><input type="text" name="valor_despesa" placeholder="R$ 0,00" onkeyup="mascaraMoeda(this)" required style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;"></div>
                     <button type="submit" class="btn-submit" style="width: 100%; margin-top: 10px; background-color: #e74c3c;"><i class="fas fa-arrow-down"></i> Registrar Gasto</button>
                 </form>
-
                 <div class="table-wrapper" style="margin-top: 20px;">
                     <table>
                         <thead><tr><th>Data</th><th>Despesa</th><th>Valor</th><th style="text-align: right;">Ações</th></tr></thead>
@@ -485,11 +477,7 @@ function getStatusClass($status) {
                                     <td style="color: #e74c3c; font-weight: bold;">- <?= number_format($desp['valor'], 2, ',', '.') ?></td>
                                     <td style="text-align: right; white-space: nowrap;">
                                         <button type="button" class="btn-editar-sm" onclick="abrirModalGasto(<?= $desp['id'] ?>, '<?= htmlspecialchars($desp['descricao'], ENT_QUOTES) ?>', '<?= $desp['data_despesa'] ?>', '<?= number_format($desp['valor'], 2, ',', '.') ?>')"><i class="fas fa-edit"></i></button>
-                                        <form method="POST" style="display:inline;" action="detalhes_projeto.php?id=<?= $id_projeto ?>">
-                                            <input type="hidden" name="acao" value="arquivar_despesa">
-                                            <input type="hidden" name="id_despesa" value="<?= $desp['id'] ?>">
-                                            <button type="submit" class="btn-arquivar-sm" onclick="return confirm('Arquivar este gasto?');"><i class="fas fa-archive"></i></button>
-                                        </form>
+                                        <form method="POST" style="display:inline;" action="detalhes_projeto.php?id=<?= $id_projeto ?>"><input type="hidden" name="acao" value="arquivar_despesa"><input type="hidden" name="id_despesa" value="<?= $desp['id'] ?>"><button type="submit" class="btn-arquivar-sm" onclick="return confirm('Arquivar este gasto?');"><i class="fas fa-archive"></i></button></form>
                                     </td>
                                 </tr>
                             <?php endforeach; endif; ?>
@@ -529,26 +517,40 @@ function getStatusClass($status) {
 
         <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
         
+        <div id="modalAtualizarProgresso" class="modal-overlay">
+            <div class="modal-content" style="border-top-color: #f1c40f;">
+                <span class="close-modal" onclick="fecharModalProgresso()">&times;</span>
+                <h2 style="color: #f1c40f; margin-top: 0;"><i class="fas fa-tasks"></i> Progresso: <span id="texto_progresso_parcela"></span></h2>
+                <form method="POST" action="detalhes_projeto.php?id=<?= $id_projeto ?>">
+                    <input type="hidden" name="acao" value="atualizar_progresso">
+                    <input type="hidden" name="acompanhamento_id" id="progresso_acomp_id">
+                    
+                    <p style="color: #aaa; font-size: 0.9rem; margin-bottom: 20px;">Marque as tarefas que a equipa já concluiu e guarde o progresso. A etapa só poderá ser fechada quando todas estiverem concluídas.</p>
+                    
+                    <div id="container_progresso_checklist"></div>
+                    
+                    <button type="submit" style="background-color: #f1c40f; color: #111; width: 100%; border: none; padding: 15px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 1.1rem; margin-top: 15px;">Salvar Progresso</button>
+                </form>
+            </div>
+        </div>
+
         <div id="modalReceberParcela" class="modal-overlay">
             <div class="modal-content" style="border-top-color: #2ecc71;">
                 <span class="close-modal" onclick="fecharModalReceberParcela()">&times;</span>
-                <h2 style="color: #2ecc71; margin-top: 0;"><i class="fas fa-clipboard-check"></i> Fechamento de <span id="texto_parcela"></span></h2>
+                <h2 style="color: #2ecc71; margin-top: 0;"><i class="fas fa-check-double"></i> Fechar: <span id="texto_parcela"></span></h2>
                 <form method="POST" action="detalhes_projeto.php?id=<?= $id_projeto ?>">
                     <input type="hidden" name="acao" value="receber_e_concluir_semana">
                     <input type="hidden" name="acompanhamento_id" id="parcela_acomp_id">
-                    <input type="hidden" name="inicio_periodo" id="parcela_inicio">
-                    <input type="hidden" name="fim_periodo" id="parcela_fim">
-                    <input type="hidden" name="titulo_periodo" id="parcela_titulo_hidden">
                     <input type="hidden" name="descricao_rec" id="parcela_descricao">
                     
-                    <div class="form-group" style="margin-bottom: 20px; background: #222; padding: 15px; border-radius: 4px; border: 1px solid #444;">
-                        <label style="color: #f1c40f; font-size: 0.95rem; font-weight: bold; margin-bottom: 10px; display: block;"><i class="fas fa-check-square"></i> Tarefas Concluídas</label>
-                        <div id="container_checklist_modal"></div>
+                    <div style="background-color: rgba(46, 204, 113, 0.1); padding: 15px; border-radius: 4px; border: 1px solid #2ecc71; margin-bottom: 20px;">
+                        <strong style="color: #2ecc71;"><i class="fas fa-thumbs-up"></i> 100% das Tarefas Concluídas!</strong>
+                        <p style="color: #ccc; font-size: 0.85rem; margin: 5px 0 0 0;">Faça o relato final da engenharia e registre o faturamento para fechar esta etapa.</p>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 20px;">
-                        <label style="color: #fff; font-size: 0.95rem; font-weight: bold;"><i class="fas fa-pen"></i> Relato Complementar</label>
-                        <textarea name="relato_semana" rows="2" placeholder="Ocorrências ou detalhes (Opcional)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box;"></textarea>
+                        <label style="color: #fff; font-size: 0.95rem; font-weight: bold;"><i class="fas fa-pen"></i> Relato Final (Diário de Obra)</label>
+                        <textarea name="relato_semana" rows="3" placeholder="O que foi executado nesta etapa? Dificuldades? Entregas?" required style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box;"></textarea>
                     </div>
 
                     <div style="display: flex; gap: 15px; margin-bottom: 25px; align-items: flex-end;">
@@ -561,127 +563,74 @@ function getStatusClass($status) {
                             <input type="text" name="valor_rec" id="parcela_valor" onkeyup="mascaraMoeda(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #3498db; color: #3498db; border-radius: 4px; box-sizing: border-box; font-size: 1.2rem; font-weight: bold;">
                         </div>
                     </div>
-                    
-                    <button type="submit" style="background-color: #2ecc71; color: #111; width: 100%; border: none; padding: 15px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 1.1rem;">Concluir Etapa e Salvar</button>
+                    <button type="submit" style="background-color: #2ecc71; color: #111; width: 100%; border: none; padding: 15px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 1.1rem;">Concluir Obra e Gravar Caixa</button>
                 </form>
             </div>
         </div>
 
-        <div id="modalEditarRecebimento" class="modal-overlay">
-            <div class="modal-content" style="border-top-color: #3498db;">
-                <span class="close-modal" onclick="fecharModalEditarRec()">&times;</span>
-                <h2 style="color: #3498db; margin-top: 0;"><i class="fas fa-edit"></i> Corrigir Recebimento</h2>
-                <form method="POST" action="detalhes_projeto.php?id=<?= $id_projeto ?>">
-                    <input type="hidden" name="acao" value="editar_recebimento">
-                    <input type="hidden" name="id_recebimento" id="edit_rec_id">
-                    <div class="form-group" style="margin-bottom: 15px;">
-                        <label style="color: #aaa; font-size: 0.85rem; font-weight: bold;">Descrição</label>
-                        <input type="text" name="descricao_rec_edit" id="edit_rec_desc" required style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 15px;">
-                        <label style="color: #aaa; font-size: 0.85rem; font-weight: bold;">Data</label>
-                        <input type="date" name="data_rec_edit" id="edit_rec_data" required style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 25px;">
-                        <label style="color: #aaa; font-size: 0.85rem; font-weight: bold;">Valor (R$)</label>
-                        <input type="text" name="valor_rec_edit" id="edit_rec_valor" onkeyup="mascaraMoeda(this)" required style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                    <button type="submit" class="btn-submit" style="background-color: #3498db; color: #fff; width: 100%; border: none; padding: 12px; font-weight: bold; border-radius: 4px; cursor: pointer;">Salvar Correção</button>
-                </form>
-            </div>
-        </div>
-
-        <div id="modalEditarGasto" class="modal-overlay">
-            <div class="modal-content" style="border-top-color: #e74c3c;">
-                <span class="close-modal" onclick="fecharModalGasto()">&times;</span>
-                <h2 style="color: #e74c3c; margin-top: 0;"><i class="fas fa-edit"></i> Corrigir Despesa</h2>
-                <form method="POST" action="detalhes_projeto.php?id=<?= $id_projeto ?>">
-                    <input type="hidden" name="acao" value="editar_despesa">
-                    <input type="hidden" name="id_despesa" id="edit_desp_id">
-                    <div class="form-group" style="margin-bottom: 15px;">
-                        <label style="color: #aaa; font-size: 0.85rem; font-weight: bold;">Descrição</label>
-                        <input type="text" name="descricao_edit" id="edit_desp_desc" required style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 15px;">
-                        <label style="color: #aaa; font-size: 0.85rem; font-weight: bold;">Data</label>
-                        <input type="date" name="data_despesa_edit" id="edit_desp_data" required style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 25px;">
-                        <label style="color: #aaa; font-size: 0.85rem; font-weight: bold;">Valor (R$)</label>
-                        <input type="text" name="valor_edit" id="edit_desp_valor" onkeyup="mascaraMoeda(this)" required style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                    <button type="submit" class="btn-submit" style="background-color: #e74c3c; color: #fff; width: 100%; border: none; padding: 12px; font-weight: bold; border-radius: 4px; cursor: pointer;">Salvar Correção</button>
-                </form>
-            </div>
-        </div>
-        
+        <div id="modalEditarRecebimento" class="modal-overlay">...</div>
+        <div id="modalEditarGasto" class="modal-overlay">...</div>
         <?php endif; ?>
     </main>
 
     <script>
         <?php if ($_SESSION['nivel_acesso'] !== 'cliente'): ?>
-        function abrirModalReceberParcela(id_acomp, titulo, data_inicio, data_fim, valor_sugerido, itensJson) {
-            document.getElementById('texto_parcela').innerText = titulo;
-            document.getElementById('parcela_acomp_id').value = id_acomp;
-            document.getElementById('parcela_titulo_hidden').value = titulo;
-            document.getElementById('parcela_descricao').value = 'Medição - ' + titulo;
-            document.getElementById('parcela_inicio').value = data_inicio;
-            document.getElementById('parcela_fim').value = data_fim;
-            document.getElementById('parcela_data').value = data_fim; 
-            document.getElementById('parcela_valor').value = valor_sugerido;
-
+        
+        function abrirModalProgresso(id_acomp, titulo, itensJson) {
+            document.getElementById('texto_progresso_parcela').innerText = titulo;
+            document.getElementById('progresso_acomp_id').value = id_acomp;
+            
             let itens = JSON.parse(itensJson);
-            let container = document.getElementById('container_checklist_modal');
+            let container = document.getElementById('container_progresso_checklist');
             container.innerHTML = '';
+            
+            let hoje = new Date().toISOString().split('T')[0];
             
             if(itens.length > 0) {
                 itens.forEach(item => {
                     let isChecked = item.concluido == 1 ? 'checked' : '';
-                    container.innerHTML += `<label style="display:flex; align-items:flex-start; gap:10px; margin-bottom:10px; color:#fff; cursor:pointer; font-size: 0.9rem;">
-                        <input type="checkbox" name="itens_concluidos[]" value="${item.id}" ${isChecked} style="transform: scale(1.2); margin-top: 3px;">
-                        ${item.descricao}
-                    </label>`;
-                });
-            } else {
-                container.innerHTML = '<span style="color:#888; font-size:0.85rem; font-style:italic;">Nenhuma tarefa cadastrada. O período pode ser fechado normalmente.</span>';
-            }
+                    let dataPrevTxt = item.data_previsao ? item.data_previsao.split('-').reverse().join('/') : '--';
+                    let dataReal = item.data_realizada ? item.data_realizada : (item.data_previsao ? item.data_previsao : hoje);
+                    let displayDate = item.concluido == 1 ? 'block' : 'none';
 
+                    container.innerHTML += `
+                    <div style="background: #222; padding: 12px; border-radius: 4px; margin-bottom: 12px; border: 1px solid #333;">
+                        <label style="display:flex; align-items:flex-start; gap:12px; color:#fff; cursor:pointer; font-size: 0.95rem; margin-bottom: 5px; font-weight: bold;">
+                            <input type="checkbox" name="itens_concluidos[]" value="${item.id}" ${isChecked} style="transform: scale(1.3); margin-top: 3px;" onchange="document.getElementById('data_real_${item.id}').style.display = this.checked ? 'block' : 'none'">
+                            ${item.descricao}
+                        </label>
+                        <div style="margin-left: 30px; color: #888; font-size: 0.8rem; margin-bottom: 5px;">
+                            <i class="fas fa-bullseye"></i> Previsto para: ${dataPrevTxt}
+                        </div>
+                        <div id="data_real_${item.id}" style="display: ${displayDate}; margin-left: 30px; margin-top: 10px; border-top: 1px dashed #444; padding-top: 10px;">
+                            <span style="color: #aaa; font-size: 0.8rem; margin-right: 10px;">Entregue no dia:</span>
+                            <input type="date" name="datas_realizadas[${item.id}]" value="${dataReal}" style="padding: 6px; background: #111; border: 1px solid #555; color: #fff; border-radius: 4px; font-family: inherit;">
+                        </div>
+                    </div>`;
+                });
+            }
+            document.getElementById('modalAtualizarProgresso').style.display = 'flex';
+        }
+        function fecharModalProgresso() { document.getElementById('modalAtualizarProgresso').style.display = 'none'; }
+
+        function abrirModalReceberParcela(id_acomp, titulo, data_fim, valor_sugerido) {
+            document.getElementById('texto_parcela').innerText = titulo;
+            document.getElementById('parcela_acomp_id').value = id_acomp;
+            document.getElementById('parcela_descricao').value = 'Medição - ' + titulo;
+            document.getElementById('parcela_data').value = data_fim; 
+            document.getElementById('parcela_valor').value = valor_sugerido;
             document.getElementById('modalReceberParcela').style.display = 'flex';
         }
         function fecharModalReceberParcela() { document.getElementById('modalReceberParcela').style.display = 'none'; }
-
-        function abrirModalEditarRec(id, desc, data, valor) {
-            document.getElementById('edit_rec_id').value = id;
-            document.getElementById('edit_rec_desc').value = desc;
-            document.getElementById('edit_rec_data').value = data;
-            document.getElementById('edit_rec_valor').value = valor;
-            document.getElementById('modalEditarRecebimento').style.display = 'flex';
-        }
-        function fecharModalEditarRec() { document.getElementById('modalEditarRecebimento').style.display = 'none'; }
-
-        function abrirModalGasto(id, desc, data, valor) {
-            document.getElementById('edit_desp_id').value = id;
-            document.getElementById('edit_desp_desc').value = desc;
-            document.getElementById('edit_desp_data').value = data;
-            document.getElementById('edit_desp_valor').value = valor;
-            document.getElementById('modalEditarGasto').style.display = 'flex';
-        }
-        function fecharModalGasto() { document.getElementById('modalEditarGasto').style.display = 'none'; }
-
+        
         window.onclick = function(event) {
-            let mParcela = document.getElementById('modalReceberParcela');
-            let mRec = document.getElementById('modalEditarRecebimento');
-            let mGasto = document.getElementById('modalEditarGasto');
-            
-            if (event.target == mParcela) mParcela.style.display = "none";
-            if (event.target == mRec) mRec.style.display = "none";
-            if (event.target == mGasto) mGasto.style.display = "none";
+            if (event.target == document.getElementById('modalAtualizarProgresso')) fecharModalProgresso();
+            if (event.target == document.getElementById('modalReceberParcela')) fecharModalReceberParcela();
         }
         <?php endif; ?>
 
         function mascaraMoeda(input) {
-            let valor = input.value;
-            valor = valor.replace(/\D/g, "");
+            let valor = input.value.replace(/\D/g, "");
             if (valor === "") { input.value = ""; return; }
             valor = (parseInt(valor) / 100).toFixed(2) + '';
             valor = valor.replace(".", ",");

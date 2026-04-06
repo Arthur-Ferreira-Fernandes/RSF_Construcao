@@ -196,3 +196,32 @@ tr.linha-clicavel:hover .btn-detalhes { background-color: var(--primary-yellow);
     background-color: #333;
     color: #fff;
 }
+
+/* =========================================
+   PROTEÇÃO CONTRA QUEBRA DE LINHA (WRAP)
+========================================= */
+
+/* Impede que as etiquetas de status quebrem o texto no meio */
+.badge-status {
+    white-space: nowrap !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* Impede que os botões de ação (Abrir, Editar, Excluir) quebrem de linha */
+.btn-abrir,
+.btn-editar,
+.btn-excluir-obra,
+.acoes-projeto a,
+.acoes-projeto button,
+td a.btn,
+td button.btn {
+    white-space: nowrap !important;
+}
+
+/* Garante que o título do projeto não esmague os outros elementos */
+.projeto-titulo h1, 
+.projeto-titulo strong {
+    word-break: break-word !important; /* Deixa apenas o título do projeto quebrar de linha se for gigante */
+}
