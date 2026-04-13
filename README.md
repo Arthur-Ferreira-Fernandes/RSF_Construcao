@@ -31,3 +31,23 @@ O projeto segue boas práticas de nomenclatura e segurança. Por exemplo, as con
 include 'config.php';
 $query = "SELECT * FROM projetos WHERE status = 'em_andamento'";
 $resultado = mysqli_query($conexao, $query);
+```
+
+## 💻 Como Executar o Projeto Localmente
+
+1. **Clone este repositório:**
+   ```bash
+   git clone [https://github.com/Arthur-Ferreira-Fernandes/RSF_Construcao.git](https://github.com/Arthur-Ferreira-Fernandes/RSF_Construcao.git)
+   ```
+2. **Configuração do Ambiente:**
+   - Certifique-se de ter um servidor local rodando (como XAMPP, WAMP ou Apache/Nginx puro com PHP).
+   - Mova os arquivos do projeto para o diretório raiz do seu servidor web (ex: `htdocs` ou `www`).
+3. **Banco de Dados:**
+   - Crie um banco de dados no seu SGBD preferido.
+   - Importe o arquivo `.sql` (disponível na pasta do projeto) para estruturar as tabelas necessárias.
+   - Configure as credenciais de acesso no arquivo de configuração do banco (garantindo que a `$conexao` aponte para o banco correto).
+4. **Acesso:**
+   - Abra o navegador e acesse: `http://localhost/RSF_Construcao`
+
+## 👨‍💻 Autor
+**Arthur Ferreira Fernandes** *Desenvolvedor e Analista de Dados* [LinkedIn](https://www.linkedin.com/in/arthur-ferreira-02921a249/) | [GitHub](https://github.com/Arthur-Ferreira-Fernandes)
